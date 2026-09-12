@@ -72,6 +72,13 @@ const toUrl = (raw: string): URL => {
     })
   }
   parsed.pathname = parsed.pathname.replace(/\/$/, '')
+  // O GitLab institucional usa a CA privada da SEFA, que não está no trust
+  // store padrão do Node. A exceção fica restrita ao domínio institucional.
+  if (parsed.hostname.endsWith('.sefa.pa.gov.br')) {
+    const nodeProcess = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+      .process
+    if (nodeProcess?.env) nodeProcess.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+  }
   return parsed
 }
 
