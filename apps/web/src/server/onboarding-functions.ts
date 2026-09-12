@@ -66,9 +66,3 @@ export const saveOnboardingScope = createServerFn({ method: 'POST' })
     const { getCookie } = await import('@tanstack/react-start/server')
     return onboarding.saveScope(data, getCookie(SESSION_COOKIE))
   })
-
-/** Shared server-side guard for Provider readers and future mutations. */
-export const requireSession = async (): Promise<void> => {
-  const { getCookie } = await import('@tanstack/react-start/server')
-  return onboarding.requireSession(getCookie(SESSION_COOKIE))
-}
