@@ -1,4 +1,4 @@
-import { builtinViews } from '@horizon/domain'
+import { builtinViews, savedViewRef, viewRefToParam } from '@horizon/domain'
 import { createRootRoute, HeadContent, Outlet, Scripts, useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
@@ -58,10 +58,10 @@ const builtinSidebarItems: readonly SidebarItem[] = builtinViews.map((view) => (
  * Groups and projects come from the Escopo of the configured Conexão
  * (issue #3); until then the sidebar shows its empty state.
  */
-const escopoGroups: readonly SidebarGroupItem[] = []
+const scopeGroups: readonly SidebarGroupItem[] = []
 
 function AppShell({ children }: { children: ReactNode }) {
-  const { view, q } = resolveShellSearch(Route.useSearch())
+  const { viewParam, query } = resolveShellSearch(Route.useSearch())
   const navigate = useNavigate({ from: Route.fullPath })
   const savedViews = useSavedViews()
 
@@ -70,7 +70,7 @@ function AppShell({ children }: { children: ReactNode }) {
       <AppHeader
         connectionLabel={null}
         userName={null}
-        query={q}
+        query={query}
         onQueryChange={(next) =>
           navigate({
             search: (previous) => ({
@@ -83,14 +83,14 @@ function AppShell({ children }: { children: ReactNode }) {
       />
       <div className="relative flex min-h-0 flex-1">
         <AppSidebar
-          activeView={view}
+          activeView={viewParam}
           views={builtinSidebarItems}
           savedViews={savedViews.map((savedView) => ({
-            viewParam: `saved:${savedView.id}`,
+            viewParam: viewRefToParam(savedViewRef(savedView.id)),
             label: savedView.name,
             icon: '◆',
           }))}
-          groups={escopoGroups}
+          groups={scopeGroups}
         />
         {children}
       </div>

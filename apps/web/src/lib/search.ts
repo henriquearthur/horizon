@@ -1,7 +1,15 @@
-import { decodeViewMode, decodeViewRef, viewRefToParam, type ViewMode } from '@horizon/domain'
+import {
+  decodeViewMode,
+  decodeViewRef,
+  defaultViewMode,
+  defaultViewRef,
+  viewRefToParam,
+  type ViewMode,
+  type ViewRef,
+} from '@horizon/domain'
 
-export const DEFAULT_VIEW_PARAM = 'inbox'
-const DEFAULT_MODE: ViewMode = 'list'
+/** Canonical `view` param of the View Horizon opens on. */
+export const DEFAULT_VIEW_PARAM = viewRefToParam(defaultViewRef)
 
 /**
  * Shell state that lives in the URL, so a View is shareable and reloadable.
@@ -19,19 +27,26 @@ export const validateShellSearch = (search: Record<string, unknown>): ShellSearc
   const q = typeof search.q === 'string' ? search.q : ''
   return {
     ...(view === DEFAULT_VIEW_PARAM ? {} : { view }),
-    ...(mode === DEFAULT_MODE ? {} : { mode }),
+    ...(mode === defaultViewMode ? {} : { mode }),
     ...(q === '' ? {} : { q }),
   }
 }
 
+/** The shell state with defaults filled in and the View decoded once. */
 export interface ResolvedShellSearch {
-  readonly view: string
+  /** Canonical `view` param, for links and active-row comparison. */
+  readonly viewParam: string
+  readonly view: ViewRef
   readonly mode: ViewMode
-  readonly q: string
+  readonly query: string
 }
 
-export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => ({
-  view: search.view ?? DEFAULT_VIEW_PARAM,
-  mode: search.mode ?? DEFAULT_MODE,
-  q: search.q ?? '',
-})
+export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => {
+  const viewParam = search.view ?? DEFAULT_VIEW_PARAM
+  return {
+    viewParam,
+    view: decodeViewRef(viewParam),
+    mode: search.mode ?? defaultViewMode,
+    query: search.q ?? '',
+  }
+}

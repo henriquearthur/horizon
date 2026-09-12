@@ -31,19 +31,20 @@ export interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Server-rendered markup cannot know the stored theme, so it starts at the
+  // default and the effect below catches up once the client takes over.
   const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME)
 
-  // The stored theme is only readable on the client, after hydration.
+  // `themeBootstrapScript` already put the stored theme on the document before
+  // paint; this only brings React's state in line with it. Writing the
+  // attribute here instead would repaint the default first.
   useEffect(() => {
     setThemeState(readStoredTheme(globalThis.localStorage))
   }, [])
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
-
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next)
+    document.documentElement.setAttribute('data-theme', next)
     try {
       globalThis.localStorage?.setItem(THEME_STORAGE_KEY, next)
     } catch {

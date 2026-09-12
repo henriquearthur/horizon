@@ -1,20 +1,19 @@
-import { builtinView, decodeViewRef } from '@horizon/domain'
+import { builtinView, type ViewRef } from '@horizon/domain'
 
 export interface ViewHeading {
   readonly title: string
   readonly subtitle: string
 }
 
-/** Title and subtitle shown above the content area for a `view` search param. */
-export const activeViewHeading = (viewParam: string): ViewHeading => {
-  const ref = decodeViewRef(viewParam)
-  switch (ref._tag) {
+/** Title and subtitle shown above the content area for a View. */
+export const activeViewHeading = (view: ViewRef): ViewHeading => {
+  switch (view._tag) {
     case 'Builtin': {
-      const view = builtinView(ref.id)
-      return { title: view.title, subtitle: view.subtitle }
+      const builtin = builtinView(view.id)
+      return { title: builtin.title, subtitle: builtin.subtitle }
     }
     case 'Project':
-      return { title: ref.path, subtitle: 'projeto' }
+      return { title: view.path, subtitle: 'projeto' }
     case 'Saved':
       return { title: 'View salva', subtitle: 'filtros salvos por você' }
   }

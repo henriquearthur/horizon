@@ -3,30 +3,31 @@ import { describe, expect, it } from 'vitest'
 import { ContentHeader } from '~/components/shell/content-header'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
+import { decodeViewRef } from '@horizon/domain'
 import { activeViewHeading } from '~/lib/view-heading'
 import { renderWithRouter } from './router-harness'
 
 describe('activeViewHeading', () => {
   it('describes a builtin View', () => {
-    expect(activeViewHeading('all')).toEqual({
+    expect(activeViewHeading(decodeViewRef('all'))).toEqual({
       title: 'Todos os issues',
       subtitle: 'todos os grupos e subgrupos',
     })
   })
 
   it('describes a project View', () => {
-    expect(activeViewHeading('project:infra/terraform-aws')).toEqual({
+    expect(activeViewHeading(decodeViewRef('project:infra/terraform-aws'))).toEqual({
       title: 'infra/terraform-aws',
       subtitle: 'projeto',
     })
   })
 
   it('describes a saved View', () => {
-    expect(activeViewHeading('saved:v1').subtitle).toBe('filtros salvos por você')
+    expect(activeViewHeading(decodeViewRef('saved:v1')).subtitle).toBe('filtros salvos por você')
   })
 
   it('falls back to the Inbox for an unknown View', () => {
-    expect(activeViewHeading('nope').title).toBe('Inbox')
+    expect(activeViewHeading(decodeViewRef('nope')).title).toBe('Inbox')
   })
 })
 

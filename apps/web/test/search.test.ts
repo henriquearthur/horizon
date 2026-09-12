@@ -21,15 +21,21 @@ describe('validateShellSearch', () => {
 })
 
 describe('resolveShellSearch', () => {
-  it('fills in the defaults', () => {
-    expect(resolveShellSearch({})).toEqual({ view: DEFAULT_VIEW_PARAM, mode: 'list', q: '' })
+  it('fills in the defaults and decodes the View once', () => {
+    expect(resolveShellSearch({})).toEqual({
+      viewParam: DEFAULT_VIEW_PARAM,
+      view: { _tag: 'Builtin', id: 'inbox' },
+      mode: 'list',
+      query: '',
+    })
   })
 
   it('passes through what is set', () => {
-    expect(resolveShellSearch({ view: 'all', mode: 'kanban', q: 'ci' })).toEqual({
-      view: 'all',
+    expect(resolveShellSearch({ view: 'project:infra/ci', mode: 'kanban', q: 'ci' })).toEqual({
+      viewParam: 'project:infra/ci',
+      view: { _tag: 'Project', path: 'infra/ci' },
       mode: 'kanban',
-      q: 'ci',
+      query: 'ci',
     })
   })
 })

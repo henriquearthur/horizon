@@ -48,8 +48,9 @@ describe('ThemeProvider', () => {
     document.documentElement.removeAttribute('data-theme')
   })
 
-  it('applies the stored theme to the document on mount', () => {
+  it('adopts the theme the bootstrap script already applied', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'light')
+    document.documentElement.setAttribute('data-theme', 'light')
     render(
       <ThemeProvider>
         <ThemeProbe />
@@ -59,8 +60,33 @@ describe('ThemeProvider', () => {
     expect(screen.getByRole('button')).toHaveTextContent('light')
   })
 
+  it('never repaints the default over the stored theme', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'light')
+    document.documentElement.setAttribute('data-theme', 'light')
+
+    const seen: (string | undefined)[] = []
+    const observer = new MutationObserver(() => {
+      seen.push(document.documentElement.dataset.theme)
+    })
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    )
+    observer.disconnect()
+
+    expect(seen).not.toContain('dark')
+    expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
   it('toggles, applies and persists the theme', async () => {
     const user = userEvent.setup()
+    document.documentElement.setAttribute('data-theme', 'dark')
     render(
       <ThemeProvider>
         <ThemeProbe />

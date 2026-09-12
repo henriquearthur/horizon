@@ -29,7 +29,7 @@ export interface AppSidebarProps {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-2 pt-1.5 pb-1 text-[10px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+    <div className="px-2 pt-3.5 pb-1 text-[10px] font-semibold tracking-[0.06em] text-muted-foreground uppercase first:pt-1.5">
       {children}
     </div>
   )
@@ -44,16 +44,27 @@ function Count({ value }: { value: string | undefined }) {
   return <span className="flex-none font-mono text-[10.5px] text-muted-foreground">{value}</span>
 }
 
-function ViewRow({ item, active }: { item: SidebarItem; active: boolean }) {
+function ViewRow({
+  item,
+  active,
+  variant,
+}: {
+  item: SidebarItem
+  active: boolean
+  variant: 'view' | 'project'
+}) {
+  const isProject = variant === 'project'
+
   return (
     <Link
       to="."
       search={(previous) => ({ ...previous, view: item.viewParam })}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex h-[29px] items-center gap-2 rounded-md px-2 text-[12.5px] no-underline hover:bg-muted hover:no-underline',
+        'flex items-center rounded-md px-2 no-underline hover:bg-muted hover:no-underline',
+        isProject ? 'h-[26px] gap-[7px] font-mono text-[11.5px]' : 'h-[29px] gap-2 text-[12.5px]',
         active
-          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+          ? cn('bg-sidebar-accent text-sidebar-accent-foreground', !isProject && 'font-medium')
           : 'text-sidebar-foreground',
       )}
     >
@@ -62,23 +73,6 @@ function ViewRow({ item, active }: { item: SidebarItem; active: boolean }) {
           {item.icon}
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      <Count value={item.count} />
-    </Link>
-  )
-}
-
-function ProjectRow({ item, active }: { item: SidebarItem; active: boolean }) {
-  return (
-    <Link
-      to="."
-      search={(previous) => ({ ...previous, view: item.viewParam })}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex h-[26px] items-center gap-[7px] rounded-md px-2 font-mono text-[11.5px] no-underline hover:bg-muted hover:no-underline',
-        active ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-sidebar-foreground',
-      )}
-    >
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <Count value={item.count} />
     </Link>
@@ -113,10 +107,11 @@ function GroupRow({ group, activeView }: { group: SidebarGroupItem; activeView: 
       {open ? (
         <div className="ml-[17px] border-l border-sidebar-border pl-[5px]">
           {group.projects.map((project) => (
-            <ProjectRow
+            <ViewRow
               key={project.viewParam}
               item={project}
               active={project.viewParam === activeView}
+              variant="project"
             />
           ))}
         </div>
@@ -133,12 +128,22 @@ export function AppSidebar({ activeView, views, savedViews, groups }: AppSidebar
     >
       <SectionLabel>Views</SectionLabel>
       {views.map((item) => (
-        <ViewRow key={item.viewParam} item={item} active={item.viewParam === activeView} />
+        <ViewRow
+          key={item.viewParam}
+          item={item}
+          active={item.viewParam === activeView}
+          variant="view"
+        />
       ))}
 
       <SectionLabel>Views salvas</SectionLabel>
       {savedViews.map((item) => (
-        <ViewRow key={item.viewParam} item={item} active={item.viewParam === activeView} />
+        <ViewRow
+          key={item.viewParam}
+          item={item}
+          active={item.viewParam === activeView}
+          variant="view"
+        />
       ))}
       {savedViews.length === 0 ? <Hint>Aplique filtros e salve para criar uma view.</Hint> : null}
 

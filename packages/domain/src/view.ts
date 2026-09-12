@@ -31,6 +31,9 @@ export const builtinViews: readonly BuiltinView[] = [
 export const ViewMode = Schema.Literals(['list', 'kanban'])
 export type ViewMode = typeof ViewMode.Type
 
+/** The presentation a View opens in. */
+export const defaultViewMode: ViewMode = 'list'
+
 /** Which View the content area is showing. */
 export type ViewRef =
   | { readonly _tag: 'Builtin'; readonly id: BuiltinViewId }
@@ -40,14 +43,15 @@ export type ViewRef =
 const PROJECT_PREFIX = 'project:'
 const SAVED_PREFIX = 'saved:'
 
-const defaultViewRef: ViewRef = { _tag: 'Builtin', id: 'inbox' }
+/** The View Horizon opens on. */
+export const defaultViewRef: ViewRef = { _tag: 'Builtin', id: 'inbox' }
 
 const decodeBuiltinViewId = Schema.decodeUnknownOption(BuiltinViewId)
 const decodeViewModeOption = Schema.decodeUnknownOption(ViewMode)
 
 /** Decodes a URL search param into a mode, falling back to the prototype default. */
 export const decodeViewMode = (input: unknown): ViewMode =>
-  Option.getOrElse(decodeViewModeOption(input), () => 'list' as const)
+  Option.getOrElse(decodeViewModeOption(input), () => defaultViewMode)
 
 export const projectViewRef = (path: string): ViewRef => ({ _tag: 'Project', path })
 
