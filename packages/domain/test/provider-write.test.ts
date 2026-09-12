@@ -14,6 +14,16 @@ describe('GitLabWriteProvider', () => {
     expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ title: 'Corrigida', assignee_ids: [] }) })
   })
 
+  it('retries safe PUT mutations but never retries POST', async () => {
+    const issue = { id: 10, iid: 3, title: 'x', description: '', state: 'opened', web_url: 'https://g/i', labels: [], assignees: [] }
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('{}', { status: 503 })).mockResolvedValueOnce(new Response(JSON.stringify(issue)))
+    await expect(new GitLabWriteProvider({ url: 'https://gitlab.example', token: 'x' }, fetcher).updateIssue(1, 3, { title: 'x' })).resolves.toMatchObject({ title: 'x' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    const post = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 503 }))
+    await expect(new GitLabWriteProvider({ url: 'https://gitlab.example', token: 'x' }, post).createComment(1, 3, 'x')).rejects.toThrow()
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
   it('reads and publishes comments and sends close/reopen events', async () => {
     const note = { id: 8, body: 'Concordo', created_at: '2026-09-12T10:00:00Z', system: false, author: { id: 2, username: 'ana', name: 'Ana' } }
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify([note]))).mockResolvedValueOnce(new Response(JSON.stringify(note))).mockResolvedValueOnce(new Response(JSON.stringify(issue({ state: 'closed' })))).mockResolvedValueOnce(new Response(JSON.stringify(issue())) )

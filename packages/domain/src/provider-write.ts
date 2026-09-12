@@ -75,25 +75,31 @@ const asComment = (value: any): ProviderComment => {
 /** GitLab REST v4 write adapter. Mutations return the Provider-confirmed record. */
 export class GitLabWriteProvider implements ProviderWriteContract {
   readonly #baseUrl: URL
-  constructor(private readonly connection: ProviderConnection, private readonly fetcher: typeof fetch = fetch) {
+  constructor(private readonly connection: ProviderConnection, private readonly fetcher: typeof fetch = fetch, private readonly options: { maxRetries?: number; retryDelayMs?: number } = {}) {
     this.#baseUrl = new URL(connection.url)
   }
 
   async #request(path: string, init?: RequestInit): Promise<any> {
     const prefix = this.#baseUrl.pathname.replace(/\/$/, '')
     const url = new URL(`${prefix}/api/v4/${path}`, this.#baseUrl)
-    let response: Response
-    try {
-      response = await this.fetcher(url, { ...init, headers: { 'PRIVATE-TOKEN': this.connection.token, Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}) } })
-    } catch {
-      throw new ProviderWriteError('Não foi possível conectar ao GitLab.', 503)
+    let response: Response | undefined
+    const safe = !init?.method || init.method === 'GET' || init.method === 'PUT'
+    const retries = safe ? Math.max(0, this.options.maxRetries ?? 2) : 0
+    for (let attempt = 0; ; attempt++) {
+      try { response = await this.fetcher(url, { ...init, headers: { 'PRIVATE-TOKEN': this.connection.token, Accept: 'application/json', ...(init?.body ? { 'Content-Type': 'application/json' } : {}) } }) }
+      catch { if (attempt >= retries) throw new ProviderWriteError('Não foi possível conectar ao GitLab.', 503); await this.#pause(attempt); continue }
+      if (response.ok || !this.#transient(response.status) || attempt >= retries) break
+      await this.#pause(attempt)
     }
+    if (!response) throw new ProviderWriteError('Não foi possível conectar ao GitLab.', 503)
     if (!response.ok) {
       const message = response.status === 401 ? 'Token inválido ou expirado.' : response.status === 403 ? 'Você não tem permissão para realizar esta ação no GitLab.' : 'O GitLab não confirmou a alteração.'
       throw new ProviderWriteError(message, response.status)
     }
     try { return await response.json() } catch { throw new ProviderWriteError('Resposta inválida do GitLab.', 502) }
   }
+  #transient(status: number) { return status === 408 || status === 429 || status >= 500 }
+  #pause(attempt: number) { const delay = this.options.retryDelayMs ?? 0; return delay > 0 ? new Promise<void>(resolve => setTimeout(resolve, delay * 2 ** attempt)) : Promise.resolve() }
 
   readIssue(projectId: number, iid: number) { return this.#request(`projects/${projectId}/issues/${iid}`).then(value => asIssue(value, projectId)) }
   listComments(projectId: number, iid: number) { return this.#request(`projects/${projectId}/issues/${iid}/notes?sort=asc&order_by=created_at`).then((value: unknown) => Array.isArray(value) ? value.map(asComment) : (() => { throw new ProviderWriteError('Resposta inválida do GitLab.', 502) })()) }

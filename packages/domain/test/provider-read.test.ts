@@ -18,4 +18,18 @@ describe('GitLabReadProvider', () => {
     const provider = new GitLabReadProvider({ url: 'https://gitlab.example', token: 'bad' }, vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 403 }))))
     await expect(provider.listProjects()).rejects.toThrow('sem permissão')
   })
+
+  it('retries transient reads and eventually succeeds', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { headers: { 'x-next-page': '' } }))
+    await expect(new GitLabReadProvider({ url: 'https://gitlab.example', token: 'x' }, fetcher).listProjects()).resolves.toEqual({ items: [] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops after the configured retry limit', async () => {
+    const fetcher = vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 503 })))
+    await expect(new GitLabReadProvider({ url: 'https://gitlab.example', token: 'x' }, fetcher, { maxRetries: 1 }).listProjects()).rejects.toThrow('503')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
 })
