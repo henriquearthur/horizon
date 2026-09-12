@@ -119,7 +119,27 @@ function AppShell({ children }: { children: ReactNode }) {
       <div className="relative flex min-h-0 flex-1">
         <AppSidebar
           activeView={viewParam}
-          views={builtinSidebarItems}
+          views={builtinSidebarItems.map((item) => ({
+            ...item,
+            ...(runtime.snapshot
+              ? {
+                  count: String(
+                    item.viewParam === 'by-project'
+                      ? runtime.snapshot.projects.length
+                      : runtime.snapshot.issues.filter((issue) =>
+                          item.viewParam === 'inbox'
+                            ? issue.state === 'opened'
+                            : item.viewParam === 'assigned-to-me'
+                              ? issue.assignees.some(
+                                  (user) =>
+                                    user.username === runtime.snapshot?.connection.user.username,
+                                )
+                              : true,
+                        ).length,
+                  ),
+                }
+              : {}),
+          }))}
           savedViews={savedViews.map((savedView) => ({
             viewParam: viewRefToParam(savedViewRef(savedView.id)),
             label: savedView.name,

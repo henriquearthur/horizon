@@ -4,7 +4,6 @@ import {
   STATUS_VALUES,
   filterIssues,
   groupIssues,
-  readIssueProperties,
   searchIssues,
   sortIssues,
   type InboxFilters,
@@ -18,6 +17,8 @@ import {
   type ViewRef,
 } from '@horizon/domain'
 import { RefreshCw } from 'lucide-react'
+import { FilterMenu } from './filter-menu'
+import { IssueViews } from './issue-views'
 import { IssueCreateForm, IssueDetailPanel } from '~/components/issue/issue-detail-panel'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
@@ -178,186 +179,183 @@ export function InboxContent({
   return (
     <>
       <ContentToolbar resultCount={`${issues.length} ${issues.length === 1 ? 'issue' : 'issues'}`}>
-        <FilterSelect
-          label="Filtrar por projeto"
-          value={filters.projectIds?.[0] ? String(filters.projectIds[0]) : ''}
-          onChange={(value) => updateFilter('projectIds', value ? [Number(value)] : undefined)}
-          options={snapshot.projects.map((project) => ({
-            value: String(project.id),
-            label: `${project.namespace}/${project.path}`,
-          }))}
-        />
-        <FilterSelect
-          label="Filtrar por grupo"
-          value={filters.groupPaths?.[0] ?? ''}
-          onChange={(value) => updateFilter('groupPaths', value ? [value] : undefined)}
-          options={snapshot.groups.map((group) => ({
-            value: group.fullPath,
-            label: group.fullPath,
-          }))}
-        />
-        <FilterSelect
-          label="Filtrar por status"
-          value={filters.status ?? ''}
-          onChange={(value) => updateFilter('status', (value || undefined) as never)}
-          options={STATUS_VALUES.map((value) => ({ value, label: value }))}
-        />
-        <FilterSelect
-          label="Filtrar por prioridade"
-          value={filters.priority ?? ''}
-          onChange={(value) => updateFilter('priority', (value || undefined) as never)}
-          options={PRIORITY_VALUES.map((value) => ({ value, label: value }))}
-        />
-        <FilterSelect
-          label="Filtrar por autor"
-          value={filters.author ?? ''}
-          onChange={(value) => updateFilter('author', value || undefined)}
-          options={authors.map((value) => ({ value, label: value }))}
-        />
-        <FilterSelect
-          label="Filtrar por responsável"
-          value={filters.assignee ?? ''}
-          onChange={(value) => updateFilter('assignee', value || undefined)}
-          options={assignees.map((value) => ({ value, label: value }))}
-        />
-        <FilterSelect
-          label="Filtrar por label"
-          value={filters.labels?.[0] ?? ''}
-          onChange={(value) => updateFilter('labels', value ? [value] : undefined)}
-          options={labels.map((value) => ({ value, label: value }))}
-        />
-        <FilterSelect
-          label="Ordenar"
-          value={sort}
-          onChange={(value) => setSort(value as InboxSort)}
-          options={[
-            { value: 'updated', label: 'Mais recentes' },
-            { value: 'created', label: 'Criação' },
-            { value: 'title', label: 'Título' },
+        <FilterMenu
+          filters={[
+            {
+              label: 'Projeto',
+              value: filters.projectIds?.[0] ? String(filters.projectIds[0]) : '',
+              onChange: (value) => updateFilter('projectIds', value ? [Number(value)] : undefined),
+              options: snapshot.projects.map((project) => ({
+                value: String(project.id),
+                label: `${project.namespace}/${project.path}`,
+              })),
+            },
+            {
+              label: 'Grupo',
+              value: filters.groupPaths?.[0] ?? '',
+              onChange: (value) => updateFilter('groupPaths', value ? [value] : undefined),
+              options: snapshot.groups.map((group) => ({
+                value: group.fullPath,
+                label: group.fullPath,
+              })),
+            },
+            {
+              label: 'Status',
+              value: filters.status ?? '',
+              onChange: (value) => updateFilter('status', (value || undefined) as never),
+              options: STATUS_VALUES.map((value) => ({ value, label: value })),
+            },
+            {
+              label: 'Prioridade',
+              value: filters.priority ?? '',
+              onChange: (value) => updateFilter('priority', (value || undefined) as never),
+              options: PRIORITY_VALUES.map((value) => ({ value, label: value })),
+            },
+            {
+              label: 'Autor',
+              value: filters.author ?? '',
+              onChange: (value) => updateFilter('author', value || undefined),
+              options: authors.map((value) => ({ value, label: value })),
+            },
+            {
+              label: 'Responsável',
+              value: filters.assignee ?? '',
+              onChange: (value) => updateFilter('assignee', value || undefined),
+              options: assignees.map((value) => ({ value, label: value })),
+            },
+            {
+              label: 'Label',
+              value: filters.labels?.[0] ?? '',
+              onChange: (value) => updateFilter('labels', value ? [value] : undefined),
+              options: labels.map((value) => ({ value, label: value })),
+            },
           ]}
-          allowEmpty={false}
         />
-        <FilterSelect
-          label="Agrupar"
-          value={group}
-          onChange={(value) => setGroup(value as InboxGroup)}
-          options={[
-            { value: 'project', label: 'Projeto' },
-            { value: 'status', label: 'Status' },
-            { value: 'priority', label: 'Prioridade' },
-            { value: 'author', label: 'Autor' },
-            { value: 'assignee', label: 'Responsável' },
-            { value: 'label', label: 'Label' },
-          ]}
-          allowEmpty={false}
-        />
-        {Object.keys(filters).length ? (
-          <Button size="xs" variant="ghost" onClick={() => setFilters({})}>
-            Limpar
-          </Button>
-        ) : null}
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={() => {
-            const name = globalThis.prompt?.('Nome da View')?.trim()
-            if (!name) return
-            const id = globalThis.crypto.randomUUID()
-            persistSavedViews([
-              ...readSavedViews(),
-              {
-                id,
-                name,
-                scope: scopeKey,
-                mode,
-                ...(query ? { query } : {}),
-                groupBy: group,
-                sort,
-                ...filters,
-              },
-            ])
-            onSavedViewSelected?.({ view: `saved:${id}`, mode, ...(query ? { query } : {}) })
-          }}
-        >
-          Salvar View
-        </Button>
-        {activeSavedView ? (
-          <>
+        <details className="absolute right-4 top-[-35px] mr-[124px] z-30">
+          <summary
+            aria-label="Opções da view"
+            className="cursor-pointer list-none px-2 text-muted-foreground"
+          >
+            ⋯
+          </summary>
+          <div className="absolute right-0 top-7 flex w-56 flex-col gap-2 rounded-[9px] border bg-popover p-3 shadow-lg">
+            <FilterSelect
+              label="Ordenar"
+              value={sort}
+              onChange={(value) => setSort(value as InboxSort)}
+              options={[
+                { value: 'updated', label: 'Mais recentes' },
+                { value: 'created', label: 'Criação' },
+                { value: 'title', label: 'Título' },
+              ]}
+              allowEmpty={false}
+            />
+            <FilterSelect
+              label="Agrupar"
+              value={group}
+              onChange={(value) => setGroup(value as InboxGroup)}
+              options={[
+                { value: 'project', label: 'Projeto' },
+                { value: 'status', label: 'Status' },
+                { value: 'priority', label: 'Prioridade' },
+                { value: 'author', label: 'Autor' },
+                { value: 'assignee', label: 'Responsável' },
+                { value: 'label', label: 'Label' },
+              ]}
+              allowEmpty={false}
+            />
             <Button
               size="xs"
-              variant="ghost"
+              variant="outline"
               onClick={() => {
-                const name = globalThis.prompt?.('Novo nome da View', activeSavedView.name)?.trim()
+                const name = globalThis.prompt?.('Nome da View')?.trim()
                 if (!name) return
-                persistSavedViews(
-                  readSavedViews().map((savedView) =>
-                    savedView.id === activeSavedView.id ? { ...savedView, name } : savedView,
-                  ),
-                )
+                const id = globalThis.crypto.randomUUID()
+                persistSavedViews([
+                  ...readSavedViews(),
+                  {
+                    id,
+                    name,
+                    scope: scopeKey,
+                    mode,
+                    ...(query ? { query } : {}),
+                    groupBy: group,
+                    sort,
+                    ...filters,
+                  },
+                ])
+                onSavedViewSelected?.({ view: `saved:${id}`, mode, ...(query ? { query } : {}) })
               }}
             >
-              Renomear
+              Salvar View
+            </Button>
+            {activeSavedView ? (
+              <>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    const name = globalThis
+                      .prompt?.('Novo nome da View', activeSavedView.name)
+                      ?.trim()
+                    if (!name) return
+                    persistSavedViews(
+                      readSavedViews().map((savedView) =>
+                        savedView.id === activeSavedView.id ? { ...savedView, name } : savedView,
+                      ),
+                    )
+                  }}
+                >
+                  Renomear
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => {
+                    persistSavedViews(
+                      readSavedViews().filter((savedView) => savedView.id !== activeSavedView.id),
+                    )
+                    onSavedViewSelected?.({ view: 'inbox' })
+                  }}
+                >
+                  Excluir
+                </Button>
+              </>
+            ) : null}
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Atualizar issues"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw className={refreshing ? 'animate-spin' : ''} />
             </Button>
             <Button
               size="xs"
-              variant="ghost"
               onClick={() => {
-                persistSavedViews(
-                  readSavedViews().filter((savedView) => savedView.id !== activeSavedView.id),
-                )
-                onSavedViewSelected?.({ view: 'inbox' })
+                setCreateProjectId(filters.projectIds?.[0] ?? snapshot.projects[0]?.id)
+                setCreating(true)
               }}
+              disabled={!snapshot.projects.length}
             >
-              Excluir
+              Novo issue
             </Button>
-          </>
-        ) : null}
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Atualizar issues"
-          onClick={() => void refresh()}
-          disabled={refreshing}
-        >
-          <RefreshCw className={refreshing ? 'animate-spin' : ''} />
-        </Button>
-        <Button
-          size="xs"
-          onClick={() => {
-            setCreateProjectId(filters.projectIds?.[0] ?? snapshot.projects[0]?.id)
-            setCreating(true)
-          }}
-          disabled={!snapshot.projects.length}
-        >
-          Novo issue
-        </Button>
+          </div>
+        </details>
       </ContentToolbar>
 
       <div className="relative flex-1 overflow-y-auto">
         {issues.length === 0 ? (
           <EmptyState>Nenhum issue corresponde a esta View e aos filtros atuais.</EmptyState>
-        ) : mode === 'kanban' ? (
-          <div className="grid min-w-max auto-cols-[18rem] grid-flow-col gap-3 p-4">
-            {[...grouped].map(([name, items]) => (
-              <IssueGroup
-                key={name}
-                name={groupName(name, projectById)}
-                items={items}
-                onOpen={openIssue}
-              />
-            ))}
-          </div>
         ) : (
-          <div>
-            {[...grouped].map(([name, items]) => (
-              <IssueGroup
-                key={name}
-                name={groupName(name, projectById)}
-                items={items}
-                onOpen={openIssue}
-              />
-            ))}
-          </div>
+          <IssueViews
+            mode={mode}
+            issues={issues}
+            projects={snapshot.projects}
+            groups={grouped}
+            onOpen={openIssue}
+          />
         )}
         {creating ? (
           <aside className="absolute inset-y-0 right-0 z-20 w-[min(38vw,30rem)] min-w-[21rem] border-l bg-card p-4 shadow-xl">
@@ -452,55 +450,4 @@ function FilterSelect({
       ))}
     </select>
   )
-}
-
-function IssueGroup({
-  name,
-  items,
-  onOpen,
-}: {
-  name: string
-  items: readonly ProviderIssue[]
-  onOpen: (issue: ProviderIssue) => void
-}) {
-  return (
-    <section className="border-b">
-      <header className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
-        <h2 className="font-mono text-[11px] font-medium">{name}</h2>
-        <span className="font-mono text-[10px] text-muted-foreground">{items.length}</span>
-      </header>
-      <div>
-        {items.map((issue) => {
-          const properties = readIssueProperties(issue)
-          return (
-            <button
-              key={issue.id}
-              type="button"
-              onClick={() => void onOpen(issue)}
-              className="grid min-h-11 w-full grid-cols-[4rem_minmax(12rem,1fr)_8rem_7rem] items-center gap-3 border-b px-4 text-left text-xs hover:bg-muted/60 focus-visible:bg-muted"
-            >
-              <span className="font-mono text-[10px] text-muted-foreground">#{issue.iid}</span>
-              <span className="truncate font-medium">{issue.title}</span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {properties.conflicts.status ? '⚠ Conflito' : properties.status}
-              </span>
-              <span className="truncate font-mono text-[10px] text-muted-foreground">
-                {properties.conflicts.priority
-                  ? '⚠ Conflito'
-                  : (properties.priority ?? 'Sem prioridade')}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function groupName(
-  name: string,
-  projects: ReadonlyMap<number, RuntimeSnapshot['projects'][number]>,
-): string {
-  const project = projects.get(Number(name))
-  return project ? `${project.namespace}/${project.path}` : name
 }
