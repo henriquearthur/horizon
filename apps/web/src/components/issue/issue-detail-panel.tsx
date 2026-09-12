@@ -75,12 +75,17 @@ export function IssueDetailPanel({
   const activity = comments.filter((item) => item.system)
 
   useEffect(() => {
-    void provider.listMergeRequests?.(issue.projectId, issue.iid).then(setMergeRequests)
+    let active = true
+    setMergeRequests([])
+    void provider.listMergeRequests?.(issue.projectId, issue.iid)
+      .then((items) => { if (active) setMergeRequests(items) })
+      .catch(() => { if (active) setMergeRequests([]) })
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
     setLabels(issue.labels)
-  }, [issue])
+    return () => { active = false }
+  }, [issue, provider])
 
   const mutate = async (action: () => Promise<ProviderIssue>) => {
     setBusy(true)

@@ -1,4 +1,4 @@
-import { groupViewRef, projectViewRef, viewRefToParam } from '@horizon/domain'
+import { isIssueVisible, groupViewRef, projectViewRef, viewRefToParam } from '@horizon/domain'
 import type { ProviderGroup, ProviderIssue, ProviderProject } from '@horizon/domain'
 import type { SidebarGroupItem, SidebarItem } from '~/components/shell/app-sidebar'
 
@@ -25,7 +25,7 @@ export const buildScopeTree = (
 ): ScopeTree => {
   const paths = groups.map((group) => group.fullPath)
   const issuesByProject = new Map<number, number>()
-  for (const issue of issues)
+  for (const issue of issues.filter((item) => isIssueVisible(item)))
     issuesByProject.set(issue.projectId, (issuesByProject.get(issue.projectId) ?? 0) + 1)
 
   /** The deepest group in the Escopo that contains the project. */
