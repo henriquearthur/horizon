@@ -23,6 +23,7 @@ function SetupPage() {
   const { status } = Route.useLoaderData()
   const [catalog, setCatalog] = useState<SetupCatalog>()
   const [catalogError, setCatalogError] = useState<string>()
+  const [catalogAttempt, setCatalogAttempt] = useState(0)
   useEffect(() => {
     if (!status.reachable) return
     void getSetupCatalog()
@@ -32,7 +33,7 @@ function SetupPage() {
           error instanceof Error ? error.message : 'Não foi possível carregar grupos e projetos.',
         ),
       )
-  }, [status.reachable])
+  }, [status.reachable, catalogAttempt])
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -41,11 +42,23 @@ function SetupPage() {
           Horizon · configuração
         </p>
         {!status.reachable ? (
-          <Diagnostics status={status} />
+          <Diagnostics
+            status={status}
+            onRetry={() => {
+              setCatalogError(undefined)
+              setCatalogAttempt((attempt) => attempt + 1)
+            }}
+          />
         ) : catalog ? (
           <ScopeForm catalog={catalog} host={status.host} />
         ) : catalogError ? (
-          <Diagnostics status={{ ...status, error: catalogError }} />
+          <Diagnostics
+            status={{ ...status, error: catalogError }}
+            onRetry={() => {
+              setCatalogError(undefined)
+              setCatalogAttempt((attempt) => attempt + 1)
+            }}
+          />
         ) : (
           <div role="status" className="space-y-3">
             <h1 className="text-2xl font-semibold">Carregando seu Escopo…</h1>
@@ -59,7 +72,7 @@ function SetupPage() {
   )
 }
 
-function Diagnostics({ status }: { status: SetupStatus }) {
+function Diagnostics({ status, onRetry }: { status: SetupStatus; onRetry?: () => void }) {
   const router = useRouter()
   return (
     <div className="space-y-5">
@@ -86,7 +99,14 @@ function Diagnostics({ status }: { status: SetupStatus }) {
       <p className="text-xs text-muted-foreground">
         Depois de editar o arquivo, reinicie o servidor do Horizon e recarregue esta página.
       </p>
-      <Button onClick={() => void router.invalidate()}>Verificar novamente</Button>
+      <Button
+        onClick={() => {
+          onRetry?.()
+          void router.invalidate()
+        }}
+      >
+        Verificar novamente
+      </Button>
     </div>
   )
 }
