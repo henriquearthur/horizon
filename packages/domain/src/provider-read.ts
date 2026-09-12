@@ -1,5 +1,7 @@
-import type { ScopeSelection } from './scope.ts'
-import type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
+import { GitLabHttp, GitLabHttpError, nextPageOf, type GitLabHttpOptions } from './http.ts'
+import { isProjectSelected, type ScopeSelection } from './scope.ts'
+import { toGroups, toProjects, type ProviderGroup, type ProviderProject } from './provider.ts'
+import type { ProviderUser } from './provider.ts'
 export type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
 
 export interface ProviderLabel {
@@ -48,193 +50,169 @@ export interface ProviderReadContract {
   }>
 }
 
-const user = (v: any): ProviderUser | undefined =>
-  typeof v?.id === 'number' && typeof v?.username === 'string'
+const asUser = (value: unknown): ProviderUser | undefined => {
+  const row = value as Record<string, unknown> | undefined
+  return typeof row?.id === 'number' && typeof row.username === 'string'
     ? {
-        id: v.id,
-        username: v.username,
-        name: typeof v.name === 'string' ? v.name : v.username,
-        ...(typeof v.avatar_url === 'string' ? { avatarUrl: v.avatar_url } : {}),
+        id: row.id,
+        username: row.username,
+        name: typeof row.name === 'string' ? row.name : row.username,
+        ...(typeof row.avatar_url === 'string' ? { avatarUrl: row.avatar_url } : {}),
       }
     : undefined
-const page = <T>(items: readonly T[], header: string | null): ProviderReadPage<T> => ({
-  items,
-  ...(header && Number(header) > 0 ? { nextPage: Number(header) } : {}),
-})
+}
+
+const asIssue = (value: unknown, projectId: number): ProviderIssue | undefined => {
+  const row = value as Record<string, unknown> | undefined
+  if (
+    typeof row?.id !== 'number' ||
+    typeof row.iid !== 'number' ||
+    typeof row.title !== 'string' ||
+    (row.state !== 'opened' && row.state !== 'closed') ||
+    typeof row.web_url !== 'string'
+  )
+    return undefined
+  const author = asUser(row.author)
+  return {
+    id: row.id,
+    iid: row.iid,
+    projectId: typeof row.project_id === 'number' ? row.project_id : projectId,
+    title: row.title,
+    ...(typeof row.description === 'string' ? { description: row.description } : {}),
+    state: row.state,
+    webUrl: row.web_url,
+    ...(author ? { author } : {}),
+    assignees: Array.isArray(row.assignees)
+      ? row.assignees.flatMap((item) => {
+          const user = asUser(item)
+          return user ? [user] : []
+        })
+      : [],
+    labels: Array.isArray(row.labels)
+      ? row.labels.filter((item): item is string => typeof item === 'string')
+      : [],
+    ...(typeof row.created_at === 'string' ? { createdAt: row.created_at } : {}),
+    ...(typeof row.updated_at === 'string' ? { updatedAt: row.updated_at } : {}),
+  }
+}
+
+/** Reads every page of a paginated Provider call. */
+export const readAllPages = async <T>(
+  read: (page: number) => Promise<ProviderReadPage<T>>,
+): Promise<readonly T[]> => {
+  const items: T[] = []
+  let page: number | undefined = 1
+  // GitLab's `x-next-page` is authoritative; the bound is a loop guard only.
+  for (let guard = 0; page !== undefined && guard < 1000; guard += 1) {
+    const result: ProviderReadPage<T> = await read(page)
+    items.push(...result.items)
+    page = result.nextPage
+  }
+  return items
+}
 
 export class GitLabReadProvider implements ProviderReadContract {
+  readonly #http: GitLabHttp
+
   constructor(
-    private readonly connection: { url: string; token: string },
-    private readonly fetcher: typeof fetch = fetch,
-    private readonly options: { maxRetries?: number; retryDelayMs?: number } = {},
-  ) {}
-  private async request(path: string, pageNo = 1): Promise<{ value: any; next: string | null }> {
-    const base = new URL(this.connection.url)
-    const prefix = base.pathname.replace(/\/$/, '')
-    const url = new URL(`${prefix}/api/v4/${path}`, base)
-    url.searchParams.set('page', String(pageNo))
-    url.searchParams.set('per_page', '100')
-    const retries = Math.max(0, this.options.maxRetries ?? 2)
-    let response: Response | undefined
-    for (let attempt = 0; ; attempt++) {
-      try {
-        response = await this.fetcher(url, {
-          headers: { 'PRIVATE-TOKEN': this.connection.token, Accept: 'application/json' },
-        })
-      } catch (error) {
-        if (attempt >= retries) throw new Error('Não foi possível conectar ao GitLab.')
-        await this.pause(attempt)
-        continue
-      }
-      if (response.ok || !this.transient(response.status) || attempt >= retries) break
-      await this.pause(attempt)
+    connection: { url: string; token: string },
+    fetcher: typeof fetch = fetch,
+    options: GitLabHttpOptions = {},
+  ) {
+    this.#http = new GitLabHttp(connection, fetcher, options)
+  }
+
+  async #page<T>(
+    path: string,
+    pageNo: number,
+    map: (rows: readonly unknown[]) => readonly T[],
+  ): Promise<ProviderReadPage<T>> {
+    try {
+      const { value, response } = await this.#http.json<unknown>(this.#http.url(path, pageNo))
+      const rows = Array.isArray(value) ? value : []
+      const nextPage = nextPageOf(response)
+      return { items: map(rows), ...(nextPage ? { nextPage } : {}) }
+    } catch (error) {
+      throw asReadError(error)
     }
-    if (!response) throw new Error('Não foi possível conectar ao GitLab.')
-    if (!response.ok)
-      throw new Error(
-        response.status === 403
-          ? 'Token sem permissão para acessar o GitLab.'
-          : `GitLab respondeu ${response.status}.`,
-      )
-    return { value: await response.json(), next: response.headers.get('x-next-page') }
   }
-  private transient(status: number) {
-    return status === 408 || status === 429 || status >= 500
+
+  listGroups(page = 1) {
+    return this.#page('groups?min_access_level=10', page, toGroups)
   }
-  private pause(attempt: number) {
-    const delay = this.options.retryDelayMs ?? 0
-    return delay > 0
-      ? new Promise<void>((resolve) => setTimeout(resolve, delay * 2 ** attempt))
-      : Promise.resolve()
+
+  listProjects(page = 1) {
+    return this.#page('projects?membership=true&simple=true', page, toProjects)
   }
-  async listGroups(p = 1) {
-    const r = await this.request('groups?min_access_level=10', p)
-    return page(
-      (r.value as any[]).flatMap((v) =>
-        typeof v.id === 'number' && typeof v.full_path === 'string' && typeof v.name === 'string'
-          ? [{ id: v.id, fullPath: v.full_path, name: v.name }]
-          : [],
-      ),
-      r.next,
+
+  listUsers(projectId: number, page = 1) {
+    return this.#page(`projects/${projectId}/members/all`, page, (rows) =>
+      rows.flatMap((row) => {
+        const user = asUser(row)
+        return user ? [user] : []
+      }),
     )
   }
-  async listProjects(p = 1) {
-    const r = await this.request('projects?membership=true&simple=true', p)
-    return page(
-      (r.value as any[]).flatMap((v) =>
-        typeof v.id === 'number' &&
-        typeof v.path_with_namespace === 'string' &&
-        typeof v.name === 'string' &&
-        typeof v.web_url === 'string'
+
+  listLabels(projectId: number, page = 1) {
+    return this.#page(`projects/${projectId}/labels`, page, (rows) =>
+      rows.flatMap((item) => {
+        const row = item as Record<string, unknown>
+        return typeof row?.id === 'number' && typeof row.name === 'string'
           ? [
               {
-                id: v.id,
-                path:
-                  typeof v.path === 'string' ? v.path : v.path_with_namespace.split('/').at(-1)!,
-                name: v.name,
-                namespace: v.path_with_namespace.slice(0, -(String(v.path ?? v.name).length + 1)),
-                webUrl: v.web_url,
-                groupPath: v.path_with_namespace.split('/').slice(0, -1).join('/'),
+                id: row.id,
+                name: row.name,
+                ...(typeof row.color === 'string' ? { color: row.color } : {}),
               },
             ]
-          : [],
-      ),
-      r.next,
-    )
-  }
-  async listUsers(id: number, p = 1) {
-    const r = await this.request(`projects/${id}/members/all`, p)
-    return page(
-      (r.value as any[]).flatMap((v) => {
-        const u = user(v)
-        return u ? [u] : []
+          : []
       }),
-      r.next,
     )
   }
-  async listLabels(id: number, p = 1) {
-    const r = await this.request(`projects/${id}/labels`, p)
-    return page(
-      (r.value as any[]).flatMap((v) =>
-        typeof v.id === 'number' && typeof v.name === 'string'
-          ? [{ id: v.id, name: v.name, ...(typeof v.color === 'string' ? { color: v.color } : {}) }]
-          : [],
-      ),
-      r.next,
-    )
-  }
-  async listIssues(id: number, p = 1) {
-    const r = await this.request(`projects/${id}/issues?scope=all`, p)
-    return page(
-      (r.value as any[]).flatMap((v) => {
-        if (!(
-          typeof v.id === 'number' &&
-          typeof v.iid === 'number' &&
-          typeof v.title === 'string' &&
-          typeof v.state === 'string' &&
-          typeof v.web_url === 'string'
-        ))
-          return []
-        const a = user(v.author)
-        return [
-          {
-            id: v.id,
-            iid: v.iid,
-            projectId: id,
-            title: v.title,
-            ...(typeof v.description === 'string' ? { description: v.description } : {}),
-            state: v.state,
-            webUrl: v.web_url,
-            ...(a ? { author: a } : {}),
-            assignees: (v.assignees ?? []).flatMap((x: any) => {
-              const u = user(x)
-              return u ? [u] : []
-            }),
-            labels: Array.isArray(v.labels)
-              ? v.labels.filter((x: unknown): x is string => typeof x === 'string')
-              : [],
-            ...(typeof v.created_at === 'string' ? { createdAt: v.created_at } : {}),
-            ...(typeof v.updated_at === 'string' ? { updatedAt: v.updated_at } : {}),
-          },
-        ]
+
+  listIssues(projectId: number, page = 1) {
+    return this.#page(`projects/${projectId}/issues?scope=all`, page, (rows) =>
+      rows.flatMap((row) => {
+        const issue = asIssue(row, projectId)
+        return issue ? [issue] : []
       }),
-      r.next,
     )
   }
+
   async searchDiscussions(query: string, projectIds: readonly number[]) {
     const matches: ProviderDiscussionMatch[] = []
-    for (const projectId of projectIds) {
-      const result = await this.request(
-        `projects/${projectId}/search?scope=notes&search=${encodeURIComponent(query)}`,
-      )
-      matches.push(
-        ...(result.value as any[]).flatMap((value) =>
-          typeof value.noteable_iid === 'number' ? [{ projectId, iid: value.noteable_iid }] : [],
-        ),
-      )
+    // The search endpoint is one of the most rate-limited on GitLab, so the
+    // fan-out is capped: a discussion search is a hint, not an exhaustive scan.
+    for (const projectId of projectIds.slice(0, 20)) {
+      try {
+        const { value } = await this.#http.json<unknown>(
+          this.#http.url(
+            `projects/${projectId}/search?scope=notes&search=${encodeURIComponent(query)}`,
+            1,
+            20,
+          ),
+        )
+        for (const item of Array.isArray(value) ? value : []) {
+          const iid = (item as { noteable_iid?: unknown }).noteable_iid
+          if (typeof iid === 'number') matches.push({ projectId, iid })
+        }
+      } catch {
+        // A project the token cannot search must not fail the whole search.
+      }
     }
     return matches
   }
+
   async readScope(scope: ScopeSelection) {
-    const projects: ProviderProject[] = []
-    for (let p = 1; ; p++) {
-      const r = await this.listProjects(p)
-      projects.push(
-        ...r.items.filter(
-          (x) =>
-            scope.projects.includes(x.id) ||
-            scope.followGroups.some((g) => x.groupPath === g || x.groupPath?.startsWith(`${g}/`)),
-        ),
-      )
-      if (!r.nextPage) break
-    }
+    const allProjects = await readAllPages((page) => this.listProjects(page))
+    const projects = allProjects.filter((project) => isProjectSelected(project, scope))
     const issues: ProviderIssue[] = []
     for (const project of projects)
-      for (let p = 1; ; p++) {
-        const r = await this.listIssues(project.id, p)
-        issues.push(...r.items)
-        if (!r.nextPage) break
-      }
+      issues.push(...(await readAllPages((page) => this.listIssues(project.id, page))))
     return { groups: [], projects, issues }
   }
 }
+
+const asReadError = (error: unknown): Error =>
+  error instanceof GitLabHttpError ? new Error(error.message) : (error as Error)

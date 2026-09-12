@@ -61,6 +61,23 @@ function Assignee({ issue, card = false }: { issue: ProviderIssue; card?: boolea
   )
 }
 
+/**
+ * Two Horizon labels for the same field is an explicit conflict, and the list
+ * has to show it: the derived Status silently falls back to Backlog otherwise.
+ */
+function ConflictBadge({ issue }: { issue: ProviderIssue }) {
+  const { conflicts } = readIssueProperties(issue)
+  if (!conflicts.status) return null
+  return (
+    <span
+      title="Labels Horizon conflitantes para Status"
+      className="shrink-0 whitespace-nowrap font-mono text-[10px] font-medium text-destructive"
+    >
+      ⚠ Conflito
+    </span>
+  )
+}
+
 function Priority({ issue }: { issue: ProviderIssue }) {
   const properties = readIssueProperties(issue)
   const priority = properties.priority?.split(' ')[0]
@@ -148,6 +165,7 @@ export function IssueViews({
                       <IssueLabels issue={issue} />
                     </div>
                     <div className="flex w-full items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                      <ConflictBadge issue={issue} />
                       <Priority issue={issue} />
                       <span className="flex-1" />
                       <Assignee issue={issue} card />
@@ -228,6 +246,7 @@ export function IssueViews({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2 pt-px text-[10.5px]">
+                    <ConflictBadge issue={issue} />
                     <Priority issue={issue} />
                     <Assignee issue={issue} />
                   </div>

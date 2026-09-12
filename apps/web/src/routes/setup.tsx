@@ -1,88 +1,117 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
+import { useState, type FormEvent } from 'react'
 import type { ProviderGroup, ProviderProject } from '@horizon/domain'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import {
-  connectGitLab,
-  getConnection,
-  getOnboardingCatalog,
-  saveOnboardingScope,
-} from '~/server/onboarding-functions'
+import { getSetupCatalog, getSetupStatus, saveSetupScope } from '~/server/setup-functions'
+import type { SetupCatalog, SetupStatus } from '~/server/setup'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
-export const Route = createFileRoute('/setup')({ component: SetupPage })
+/**
+ * The Conexão comes from the environment, so `/setup` has one job left:
+ * choosing the Escopo. When the environment is missing or the token does not
+ * reach GitLab, it explains exactly what to fix instead of asking for a token.
+ */
+export const Route = createFileRoute('/setup')({
+  loader: async (): Promise<{ status: SetupStatus; catalog?: SetupCatalog }> => {
+    const status = await getSetupStatus()
+    if (!status.reachable) return { status }
+    return { status, catalog: await getSetupCatalog() }
+  },
+  component: SetupPage,
+})
 
 function SetupPage() {
+  const { status, catalog } = Route.useLoaderData()
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-xl rounded-xl border bg-card p-7 shadow-lg">
+        <p className="mb-2 font-mono text-xs uppercase tracking-widest text-primary">
+          Horizon · configuração
+        </p>
+        {catalog ? (
+          <ScopeForm catalog={catalog} host={status.host} />
+        ) : (
+          <Diagnostics status={status} />
+        )}
+      </div>
+    </main>
+  )
+}
+
+function Diagnostics({ status }: { status: SetupStatus }) {
+  const router = useRouter()
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold">Configure a Conexão no ambiente</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          A URL e o token do GitLab são lidos do <code className="font-mono">.env.local</code> do
+          servidor. O token nunca chega ao navegador e não é cadastrado aqui.
+        </p>
+      </div>
+      <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">
+        {`${status.envVars.url}=https://gitlab.exemplo.com\n${status.envVars.token}=glpat-…`}
+      </pre>
+      {status.missing.length ? (
+        <p role="alert" className="text-sm text-destructive">
+          Faltando no ambiente: {status.missing.join(', ')}.
+        </p>
+      ) : null}
+      {status.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {status.error}
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        Depois de editar o arquivo, reinicie o servidor do Horizon e recarregue esta página.
+      </p>
+      <Button onClick={() => void router.invalidate()}>Verificar novamente</Button>
+    </div>
+  )
+}
+
+function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | undefined }) {
   const navigate = useNavigate()
   const runtime = useHorizonRuntime()
-  const [url, setUrl] = useState('')
-  const [token, setToken] = useState('')
-  const [groups, setGroups] = useState<readonly ProviderGroup[]>([])
-  const [projects, setProjects] = useState<readonly ProviderProject[]>([])
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([])
-  const [selectedProjects, setSelectedProjects] = useState<number[]>([])
-  const [followGroups, setFollowGroups] = useState<string[]>([])
-  const [step, setStep] = useState<'connection' | 'scope'>('connection')
+  const [selectedGroups, setSelectedGroups] = useState<readonly string[]>(catalog.scope.groups)
+  const [selectedProjects, setSelectedProjects] = useState<readonly number[]>(
+    catalog.scope.projects,
+  )
+  const [followGroups, setFollowGroups] = useState<readonly string[]>(catalog.scope.followGroups)
+  const [filter, setFilter] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    void getConnection()
-      .then(async (connection) => {
-        if (!connection) return
-        setUrl(connection.url)
-        const catalog = await getOnboardingCatalog()
-        setGroups(catalog.groups)
-        setProjects(catalog.projects)
-        setSelectedGroups([...catalog.scope.groups])
-        setSelectedProjects([...catalog.scope.projects])
-        setFollowGroups([...catalog.scope.followGroups])
-        setStep('scope')
-      })
-      .catch(() => undefined)
-  }, [])
-
-  const submitConnection = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError(undefined)
-    try {
-      await connectGitLab({ data: { url, token } })
-      const catalog = await getOnboardingCatalog()
-      setGroups(catalog.groups)
-      setProjects(catalog.projects)
-      setSelectedGroups([...catalog.scope.groups])
-      setSelectedProjects([...catalog.scope.projects])
-      setFollowGroups([...catalog.scope.followGroups])
-      setStep('scope')
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível validar a Conexão.')
-    } finally {
-      setBusy(false)
-    }
+  const toggleGroup = (group: ProviderGroup, checked: boolean) => {
+    setSelectedGroups((current) =>
+      checked
+        ? [...new Set([...current, group.fullPath])]
+        : current.filter((path) => path !== group.fullPath),
+    )
+    if (!checked) setFollowGroups((current) => current.filter((path) => path !== group.fullPath))
   }
 
-  const submitScope = async (event: FormEvent) => {
+  const projectsOfGroup = (group: string): readonly number[] =>
+    catalog.projects
+      .filter(
+        (project) => project.groupPath === group || project.groupPath?.startsWith(`${group}/`),
+      )
+      .map((project) => project.id)
+
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     setError(undefined)
     try {
-      const projectsFromSelectedGroups = projects
-        .filter((project) =>
-          selectedGroups.some(
-            (group) => project.groupPath === group || project.groupPath?.startsWith(`${group}/`),
-          ),
-        )
-        .map((project) => project.id)
-      await saveOnboardingScope({
-        data: {
-          groups: selectedGroups,
-          projects: [...new Set([...selectedProjects, ...projectsFromSelectedGroups])],
-          followGroups,
-        },
+      const fromGroups = selectedGroups.flatMap((group) => projectsOfGroup(group))
+      const projects = [...new Set([...selectedProjects, ...fromGroups])]
+      if (!projects.length && !followGroups.length)
+        throw new Error('Selecione ao menos um projeto ou grupo para o Escopo.')
+      await saveSetupScope({
+        data: { groups: [...selectedGroups], projects, followGroups: [...followGroups] },
       })
-      await runtime.refresh()
+      await runtime.refresh({ force: true })
       await navigate({ to: '/' })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
@@ -91,137 +120,97 @@ function SetupPage() {
     }
   }
 
+  const term = filter.trim().toLocaleLowerCase()
+  const matches = (text: string) => !term || text.toLocaleLowerCase().includes(term)
+  const groups = catalog.groups.filter((group) => matches(group.fullPath))
+  const projects = catalog.projects.filter((project) =>
+    matches(`${project.namespace}/${project.path}`),
+  )
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-xl rounded-xl border bg-card p-7 shadow-lg">
-        <p className="mb-2 font-mono text-xs uppercase tracking-widest text-primary">
-          Horizon · configuração inicial
+    <form onSubmit={submit} className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold">Escolha seu Escopo</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Conectado a <span className="font-mono">{host ?? 'GitLab'}</span>. Selecione projetos
+          individualmente ou acompanhe um grupo para incluir projetos futuros.
         </p>
-        {step === 'connection' ? (
-          <form onSubmit={submitConnection} className="space-y-5">
-            <div>
-              <h1 className="text-2xl font-semibold">Conecte seu GitLab</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                A Conexão é armazenada no servidor. O token nunca volta para o navegador.
-              </p>
-            </div>
-            <label className="block text-sm font-medium">
-              URL do GitLab
-              <Input
-                required
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://gitlab.exemplo.com"
-                className="mt-1"
+      </div>
+      <input
+        aria-label="Filtrar grupos e projetos"
+        className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+        placeholder="Filtrar…"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+      />
+      <div className="max-h-80 space-y-2 overflow-y-auto">
+        {groups.map((group) => (
+          <div key={group.id} className="flex items-center gap-2 rounded-md border p-2">
+            <label className="flex min-w-0 flex-1 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedGroups.includes(group.fullPath)}
+                onChange={(event) => toggleGroup(group, event.target.checked)}
               />
+              <span className="truncate font-mono text-sm">{group.fullPath}</span>
             </label>
-            <label className="block text-sm font-medium">
-              Token de acesso
-              <Input
-                required
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder="glpat-…"
-                className="mt-1"
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={followGroups.includes(group.fullPath)}
+                onChange={(event) => {
+                  if (event.target.checked) {
+                    toggleGroup(group, true)
+                    setFollowGroups((current) => [...new Set([...current, group.fullPath])])
+                  } else
+                    setFollowGroups((current) => current.filter((path) => path !== group.fullPath))
+                }}
               />
+              incluir projetos futuros
             </label>
-            <Message error={error} />
-            <Button disabled={busy} type="submit">
-              {busy ? 'Validando…' : 'Validar Conexão'}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={submitScope} className="space-y-5">
-            <div>
-              <h1 className="text-2xl font-semibold">Escolha seu Escopo</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Selecione projetos individualmente ou acompanhe um grupo para incluir projetos
-                futuros.
-              </p>
-            </div>
-            <div className="max-h-80 space-y-2 overflow-y-auto">
-              {groups.map((group) => (
-                <div key={group.id} className="flex items-center gap-2 rounded-md border p-2">
-                  <label className="flex min-w-0 flex-1 items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedGroups.includes(group.fullPath)}
-                      onChange={(event) =>
-                        setSelectedGroups((current) => {
-                          if (event.target.checked) return [...current, group.fullPath]
-                          setFollowGroups((followed) =>
-                            followed.filter((path) => path !== group.fullPath),
-                          )
-                          return current.filter((path) => path !== group.fullPath)
-                        })
-                      }
-                    />
-                    <span className="truncate font-mono text-sm">{group.fullPath}</span>
-                  </label>
-                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={followGroups.includes(group.fullPath)}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          setSelectedGroups((selected) =>
-                            selected.includes(group.fullPath)
-                              ? selected
-                              : [...selected, group.fullPath],
-                          )
-                          setFollowGroups((current) => [...current, group.fullPath])
-                        } else {
-                          setFollowGroups((current) =>
-                            current.filter((path) => path !== group.fullPath),
-                          )
-                        }
-                      }}
-                    />
-                    incluir projetos futuros
-                  </label>
-                </div>
-              ))}
-              {projects.map((project) => (
-                <label
-                  key={project.id}
-                  className="ml-5 flex items-center gap-2 rounded-md p-1 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedProjects.includes(project.id)}
-                    onChange={(event) =>
-                      setSelectedProjects((current) =>
-                        event.target.checked
-                          ? [...current, project.id]
-                          : current.filter((id) => id !== project.id),
-                      )
-                    }
-                  />
-                  <span>
-                    {project.namespace}/{project.path}
-                  </span>
-                </label>
-              ))}
-              {groups.length === 0 && projects.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum grupo ou projeto acessível.</p>
-              ) : null}
-            </div>
-            <Message error={error} />
-            <Button disabled={busy} type="submit">
-              {busy ? 'Salvando…' : 'Salvar Escopo'}
-            </Button>
-          </form>
+          </div>
+        ))}
+        {projects.map((project) => (
+          <label key={project.id} className="ml-5 flex items-center gap-2 rounded-md p-1 text-sm">
+            <input
+              type="checkbox"
+              checked={selectedProjects.includes(project.id)}
+              onChange={(event) =>
+                setSelectedProjects((current) =>
+                  event.target.checked
+                    ? [...new Set([...current, project.id])]
+                    : current.filter((id) => id !== project.id),
+                )
+              }
+            />
+            <span>
+              {project.namespace}/{project.path}
+            </span>
+          </label>
+        ))}
+        {!groups.length && !projects.length ? (
+          <p className="text-sm text-muted-foreground">
+            {catalog.groups.length || catalog.projects.length
+              ? 'Nada corresponde ao filtro.'
+              : 'Nenhum grupo ou projeto acessível com este token.'}
+          </p>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex items-center gap-2">
+        <Button disabled={busy} type="submit">
+          {busy ? 'Salvando…' : 'Salvar Escopo'}
+        </Button>
+        {!catalog.scope.projects.length && !catalog.scope.followGroups.length ? null : (
+          <Button type="button" variant="ghost" onClick={() => void navigate({ to: '/' })}>
+            Voltar para a Inbox
+          </Button>
         )}
       </div>
-    </main>
+    </form>
   )
-}
-
-function Message({ error }: { error: string | undefined }) {
-  return error ? (
-    <p role="alert" className="text-sm text-destructive">
-      {error}
-    </p>
-  ) : null
 }

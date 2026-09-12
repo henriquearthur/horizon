@@ -40,12 +40,15 @@ export function IssueDetailPanel({
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
+  // Only a different issue resets the form: a background refresh of the same
+  // issue must not wipe what the user is typing.
   useEffect(() => {
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
     setLabels(issue.labels)
-  }, [issue])
+    setEditing(false)
+  }, [issue.id])
   const mutate = async (action: () => Promise<ProviderIssue>) => {
     setBusy(true)
     setError(undefined)
