@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 export const SAVED_VIEWS_STORAGE_KEY = 'horizon-saved-views'
 
-const readSavedViews = (): readonly SavedView[] => {
+export const readSavedViews = (): readonly SavedView[] => {
   try {
     const raw = globalThis.localStorage?.getItem(SAVED_VIEWS_STORAGE_KEY)
     if (!raw) return []

@@ -2,6 +2,15 @@ import { Schema } from 'effect'
 import type { ViewRef } from './view.ts'
 
 const SavedViewMode = Schema.Literals(['list', 'kanban'])
+const SavedViewSort = Schema.Literals(['updated', 'created', 'title'])
+const SavedViewGroup = Schema.Literals([
+  'project',
+  'author',
+  'assignee',
+  'status',
+  'priority',
+  'label',
+])
 
 /**
  * A View the user named and kept. Horizon owns this data; the Provider never
@@ -15,7 +24,14 @@ export const SavedView = Schema.Struct({
   /** Saved presentation and query preferences. */
   mode: Schema.optional(SavedViewMode),
   query: Schema.optional(Schema.String),
-  groupBy: Schema.optional(Schema.String),
+  groupBy: Schema.optional(SavedViewGroup),
+  sort: Schema.optional(SavedViewSort),
+  projectIds: Schema.optional(Schema.Array(Schema.Number)),
+  author: Schema.optional(Schema.String),
+  assignee: Schema.optional(Schema.String),
+  labels: Schema.optional(Schema.Array(Schema.String)),
+  status: Schema.optional(Schema.String),
+  priority: Schema.optional(Schema.String),
 })
 export type SavedView = typeof SavedView.Type
 

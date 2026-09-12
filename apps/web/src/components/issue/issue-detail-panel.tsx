@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   ProviderComment,
   ProviderIssue,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
+import { PRIORITY_VALUES, readIssueProperties, STATUS_VALUES } from '@horizon/domain'
 import { Button } from '~/components/ui/button'
 
 export function IssueDetailPanel({
@@ -13,19 +14,36 @@ export function IssueDetailPanel({
   provider,
   onClose,
   onUpdated,
+  onCommentCreated,
+  users = [],
+  availableLabels = [],
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
   provider: ProviderWriteContract
   onClose: () => void
   onUpdated: (issue: ProviderIssue) => void
+  onCommentCreated?: (comment: ProviderComment) => void
+  users?: readonly ProviderUser[]
+  availableLabels?: readonly string[]
 }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [description, setDescription] = useState(issue.description ?? '')
   const [comment, setComment] = useState('')
+  const [assigneeIds, setAssigneeIds] = useState<readonly number[]>(
+    issue.assignees.map((u) => u.id),
+  )
+  const [labels, setLabels] = useState<readonly string[]>(issue.labels)
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const properties = readIssueProperties(issue)
+  useEffect(() => {
+    setTitle(issue.title)
+    setDescription(issue.description ?? '')
+    setAssigneeIds(issue.assignees.map((user) => user.id))
+    setLabels(issue.labels)
+  }, [issue])
   const mutate = async (action: () => Promise<ProviderIssue>) => {
     setBusy(true)
     setError(undefined)
@@ -38,13 +56,21 @@ export function IssueDetailPanel({
     }
   }
   const save = () =>
-    mutate(() => provider.updateIssue(issue.projectId, issue.iid, { title, description }))
+    mutate(() =>
+      provider.updateIssue(issue.projectId, issue.iid, {
+        title,
+        description,
+        assigneeIds,
+        labels,
+      }),
+    )
   const sendComment = async () => {
     if (!comment.trim()) return
     setBusy(true)
     setError(undefined)
     try {
-      await provider.createComment(issue.projectId, issue.iid, comment.trim())
+      const created = await provider.createComment(issue.projectId, issue.iid, comment.trim())
+      onCommentCreated?.(created)
       setComment('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível publicar o comentário.')
@@ -100,15 +126,106 @@ export function IssueDetailPanel({
             {issue.state === 'closed' ? 'Reabrir' : 'Fechar'}
           </Button>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="text-[10px] font-medium uppercase text-muted-foreground">
+            Status
+            <select
+              aria-label="Status"
+              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+              value={properties.conflicts.status ? '' : properties.status}
+              onChange={(event) =>
+                void mutate(() =>
+                  provider.updateIssueProperties(issue.projectId, issue.iid, {
+                    status: event.target.value as (typeof STATUS_VALUES)[number],
+                  }),
+                )
+              }
+              disabled={busy}
+            >
+              {properties.conflicts.status ? <option value="">Corrigir conflito…</option> : null}
+              {STATUS_VALUES.map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[10px] font-medium uppercase text-muted-foreground">
+            Prioridade
+            <select
+              aria-label="Prioridade"
+              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+              value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}
+              onChange={(event) =>
+                void mutate(() =>
+                  provider.updateIssueProperties(issue.projectId, issue.iid, {
+                    priority: event.target.value as (typeof PRIORITY_VALUES)[number],
+                  }),
+                )
+              }
+              disabled={busy}
+            >
+              {properties.conflicts.priority ? <option value="">Corrigir conflito…</option> : null}
+              {PRIORITY_VALUES.map((priority) => (
+                <option key={priority}>{priority}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {properties.conflicts.status || properties.conflicts.priority ? (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            Há labels Horizon conflitantes. Escolha um valor para corrigir.
+          </p>
+        ) : null}
       </header>
       <div className="flex-1 overflow-auto p-4">
         {editing ? (
-          <textarea
-            aria-label="Descrição"
-            className="mb-5 min-h-32 w-full rounded border bg-background p-2"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
+          <div className="mb-5 space-y-3">
+            <textarea
+              aria-label="Descrição"
+              className="min-h-32 w-full rounded border bg-background p-2"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <label className="block text-xs font-medium text-muted-foreground">
+              Responsáveis
+              <select
+                multiple
+                aria-label="Responsáveis"
+                className="mt-1 min-h-20 w-full rounded border bg-background p-2 text-sm text-foreground"
+                value={assigneeIds.map(String)}
+                onChange={(event) =>
+                  setAssigneeIds(
+                    [...event.target.selectedOptions].map((option) => Number(option.value)),
+                  )
+                }
+              >
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} · @{user.username}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-muted-foreground">
+              Labels
+              <select
+                multiple
+                aria-label="Labels"
+                className="mt-1 min-h-20 w-full rounded border bg-background p-2 text-sm text-foreground"
+                value={labels}
+                onChange={(event) => {
+                  const horizonLabels = labels.filter((label) => label.startsWith('horizon::'))
+                  setLabels([
+                    ...horizonLabels,
+                    ...[...event.target.selectedOptions].map((option) => option.value),
+                  ])
+                }}
+              >
+                {availableLabels.map((label) => (
+                  <option key={label}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         ) : (
           <p className="mb-5 whitespace-pre-wrap text-sm">
             {issue.description || 'Sem descrição.'}

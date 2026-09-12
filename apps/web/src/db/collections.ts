@@ -1,4 +1,4 @@
-import { SavedViewStandardSchema } from '@horizon/domain'
+import { SavedViewStandardSchema, type ProviderIssue } from '@horizon/domain'
 import { createCollection, localOnlyCollectionOptions } from '@tanstack/react-db'
 
 /**
@@ -13,5 +13,13 @@ export const savedViewCollection = createCollection(
     id: 'saved-views',
     schema: SavedViewStandardSchema,
     getKey: (savedView) => savedView.id,
+  }),
+)
+
+/** Fast local cache of the last Provider-confirmed Issue records. */
+export const issueCollection = createCollection(
+  localOnlyCollectionOptions<ProviderIssue, number>({
+    id: 'issues',
+    getKey: (issue) => issue.id,
   }),
 )

@@ -9,11 +9,13 @@ import {
   getOnboardingCatalog,
   saveOnboardingScope,
 } from '~/server/onboarding-functions'
+import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
 export const Route = createFileRoute('/setup')({ component: SetupPage })
 
 function SetupPage() {
   const navigate = useNavigate()
+  const runtime = useHorizonRuntime()
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [groups, setGroups] = useState<readonly ProviderGroup[]>([])
@@ -24,7 +26,6 @@ function SetupPage() {
   const [step, setStep] = useState<'connection' | 'scope'>('connection')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
-  const [session, setSession] = useState<string>()
 
   useEffect(() => {
     void getConnection()
@@ -40,15 +41,14 @@ function SetupPage() {
         setStep('scope')
       })
       .catch(() => undefined)
-  }, [session])
+  }, [])
 
   const submitConnection = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     setError(undefined)
     try {
-      const result = await connectGitLab({ data: { url, token } })
-      setSession(result.session)
+      await connectGitLab({ data: { url, token } })
       const catalog = await getOnboardingCatalog()
       setGroups(catalog.groups)
       setProjects(catalog.projects)
@@ -68,9 +68,21 @@ function SetupPage() {
     setBusy(true)
     setError(undefined)
     try {
+      const projectsFromSelectedGroups = projects
+        .filter((project) =>
+          selectedGroups.some(
+            (group) => project.groupPath === group || project.groupPath?.startsWith(`${group}/`),
+          ),
+        )
+        .map((project) => project.id)
       await saveOnboardingScope({
-        data: { groups: selectedGroups, projects: selectedProjects, followGroups, session },
+        data: {
+          groups: selectedGroups,
+          projects: [...new Set([...selectedProjects, ...projectsFromSelectedGroups])],
+          followGroups,
+        },
       })
+      await runtime.refresh()
       await navigate({ to: '/' })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
@@ -130,39 +142,45 @@ function SetupPage() {
             </div>
             <div className="max-h-80 space-y-2 overflow-y-auto">
               {groups.map((group) => (
-                <label key={group.id} className="flex items-center gap-2 rounded-md border p-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedGroups.includes(group.fullPath)}
-                    onChange={(event) =>
-                      setSelectedGroups((current) =>
-                        event.target.checked
-                          ? [...current, group.fullPath]
-                          : current.filter((path) => path !== group.fullPath),
-                      )
-                    }
-                  />
-                  <span className="flex-1 font-mono text-sm">{group.fullPath}</span>
-                  <label className="text-xs text-muted-foreground">
+                <div key={group.id} className="flex items-center gap-2 rounded-md border p-2">
+                  <label className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedGroups.includes(group.fullPath)}
+                      onChange={(event) =>
+                        setSelectedGroups((current) => {
+                          if (event.target.checked) return [...current, group.fullPath]
+                          setFollowGroups((followed) =>
+                            followed.filter((path) => path !== group.fullPath),
+                          )
+                          return current.filter((path) => path !== group.fullPath)
+                        })
+                      }
+                    />
+                    <span className="truncate font-mono text-sm">{group.fullPath}</span>
+                  </label>
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
                     <input
                       type="checkbox"
                       checked={followGroups.includes(group.fullPath)}
-                      onChange={(event) =>
-                        setFollowGroups((current) =>
-                          event.target.checked
-                            ? (setSelectedGroups((selected) =>
-                                selected.includes(group.fullPath)
-                                  ? selected
-                                  : [...selected, group.fullPath],
-                              ),
-                              [...current, group.fullPath])
-                            : current.filter((path) => path !== group.fullPath),
-                        )
-                      }
-                    />{' '}
-                    acompanhar
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedGroups((selected) =>
+                            selected.includes(group.fullPath)
+                              ? selected
+                              : [...selected, group.fullPath],
+                          )
+                          setFollowGroups((current) => [...current, group.fullPath])
+                        } else {
+                          setFollowGroups((current) =>
+                            current.filter((path) => path !== group.fullPath),
+                          )
+                        }
+                      }}
+                    />
+                    incluir projetos futuros
                   </label>
-                </label>
+                </div>
               ))}
               {projects.map((project) => (
                 <label

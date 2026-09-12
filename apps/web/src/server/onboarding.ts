@@ -26,13 +26,15 @@ export class OnboardingService {
       createGitLabProvider({ url, token }),
   ) {}
 
-  requireSession(session: string | undefined): void {
-    this.store.requireSession(session)
+  requireSession(session: string | undefined): Promise<void> {
+    return this.store.requireSession(session)
   }
 
   async connection(session?: string): Promise<PublicConnection | undefined> {
-    if (session) this.store.requireSession(session)
-    return this.store.getConnection()
+    const connection = await this.store.getConnection()
+    if (!connection) return undefined
+    await this.store.requireSession(session)
+    return connection
   }
 
   async connect(
@@ -44,11 +46,11 @@ export class OnboardingService {
     // working Conexão, and the token is only ever handed to the server adapter.
     const user = await provider.validateConnection()
     const connection = await this.store.saveConnection(url.trim(), token.trim(), user)
-    return { ...connection, session: this.store.createSession() }
+    return { ...connection, session: await this.store.createSession() }
   }
 
   async catalog(session?: string): Promise<OnboardingCatalog> {
-    if (session) this.store.requireSession(session)
+    await this.store.requireSession(session)
     const credentials = await this.store.getCredentials()
     if (!credentials) return { groups: [], projects: [], scope: await this.store.getScope() }
     const provider = this.providerFactory(credentials.url, credentials.token)
@@ -61,7 +63,7 @@ export class OnboardingService {
   }
 
   async saveScope(scope: ScopeSelection, session?: string): Promise<ScopeSelection> {
-    if (session) this.store.requireSession(session)
+    await this.store.requireSession(session)
     return this.store.saveScope(scope)
   }
 }

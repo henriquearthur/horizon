@@ -19,6 +19,7 @@ interface DiskRecord {
   readonly token: string
   readonly user: ProviderUser
   readonly scope?: ScopeSelection
+  readonly sessionHash?: string
 }
 
 const dataFile = process.env.HORIZON_DATA_FILE ?? join(process.cwd(), '.horizon', 'connection.json')
@@ -75,7 +76,6 @@ const writeRecord = async (filePath: string, record: DiskRecord): Promise<void> 
 
 /** Server-only repository. Token-bearing records never cross the browser boundary. */
 export class ConnectionStore {
-  private readonly sessions = new Set<string>()
   constructor(private readonly filePath = dataFile) {}
 
   async getConnection(): Promise<StoredConnection | undefined> {
@@ -83,14 +83,18 @@ export class ConnectionStore {
     return record ? { url: record.url, user: record.user } : undefined
   }
 
-  createSession(): string {
+  async createSession(): Promise<string> {
+    const record = await readRecord(this.filePath)
+    if (!record) throw new Error('Configure uma Conexão antes de iniciar a sessão.')
     const session = randomBytes(32).toString('base64url')
-    this.sessions.add(session)
+    await writeRecord(this.filePath, { ...record, sessionHash: hashSession(session) })
     return session
   }
 
-  requireSession(session: string | undefined): void {
-    if (!session || !this.sessions.has(session)) throw new Error('Sessão inválida ou expirada.')
+  async requireSession(session: string | undefined): Promise<void> {
+    const record = await readRecord(this.filePath)
+    if (!session || !record?.sessionHash || hashSession(session) !== record.sessionHash)
+      throw new Error('Sessão inválida ou expirada.')
   }
 
   async getCredentials(): Promise<{ readonly url: string; readonly token: string } | undefined> {
@@ -147,5 +151,7 @@ export class ConnectionStore {
     return { groups: selectedGroups, projects: selectedProjects }
   }
 }
+
+const hashSession = (session: string): string => createHash('sha256').update(session).digest('hex')
 
 export const connectionStore = new ConnectionStore()
