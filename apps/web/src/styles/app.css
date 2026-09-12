@@ -74,7 +74,7 @@
   --foreground: oklch(0.9851 0 0);
   --card: oklch(0.1919 0.0126 270.684);
   --card-foreground: oklch(0.9851 0 0);
-  --popover: oklch(0.1645 0.0086 274.3354);
+  --popover: oklch(0.1919 0.0126 270.684);
   --popover-foreground: oklch(0.9851 0 0);
   --primary: oklch(0.5651 0.172 273.874);
   --primary-foreground: oklch(1 0 0);
@@ -192,6 +192,7 @@
   body {
     @apply bg-background text-foreground;
     height: 100%;
+    font-family: Inter, system-ui, sans-serif;
     letter-spacing: var(--tracking-normal);
     -webkit-font-smoothing: antialiased;
   }

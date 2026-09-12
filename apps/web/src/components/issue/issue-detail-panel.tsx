@@ -6,6 +6,7 @@ import type {
   ProviderWriteContract,
 } from '@horizon/domain'
 import { PRIORITY_VALUES, readIssueProperties, STATUS_VALUES } from '@horizon/domain'
+import { initialsOf } from '~/lib/initials'
 import { Button } from '~/components/ui/button'
 
 export function IssueDetailPanel({
@@ -28,6 +29,7 @@ export function IssueDetailPanel({
   availableLabels?: readonly string[]
 }) {
   const [editing, setEditing] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(false)
   const [title, setTitle] = useState(issue.title)
   const [description, setDescription] = useState(issue.description ?? '')
   const [comment, setComment] = useState('')
@@ -72,6 +74,7 @@ export function IssueDetailPanel({
       const created = await provider.createComment(issue.projectId, issue.iid, comment.trim())
       onCommentCreated?.(created)
       setComment('')
+      setComposerOpen(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível publicar o comentário.')
     } finally {
@@ -81,11 +84,12 @@ export function IssueDetailPanel({
   return (
     <aside
       aria-label="Detalhes do issue"
-      className="absolute inset-y-0 right-0 z-20 flex w-[min(38vw,30rem)] min-w-[21rem] flex-col border-l bg-card shadow-xl"
+      className="absolute inset-y-0 right-0 z-50 flex w-[clamp(340px,38vw,480px)] max-w-full flex-col border-l bg-card shadow-[-14px_0_40px_-10px_#0008]"
     >
-      <header className="border-b p-4">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>#{issue.iid}</span>
+      <header className="flex-none border-b px-[18px] py-3">
+        <div className="mb-[9px] flex items-center gap-[7px] font-mono text-[10.5px] text-muted-foreground">
+          <span className="font-medium text-primary">#{issue.iid}</span>
+          <span className="min-w-0 flex-1 truncate">{issuePath(issue.webUrl)}</span>
           <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Fechar detalhes">
             ×
           </Button>
@@ -98,19 +102,33 @@ export function IssueDetailPanel({
             onChange={(e) => setTitle(e.target.value)}
           />
         ) : (
-          <h2 className="mt-3 text-lg font-semibold">{issue.title}</h2>
+          <h2 className="mb-[11px] text-[16px] leading-[1.32] font-semibold [text-wrap:pretty]">
+            {issue.title}
+          </h2>
         )}
-        <div className="mt-3 flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => setEditing(!editing)}>
+        <div className="flex flex-wrap gap-1.5">
+          {issue.labels
+            .filter((label) => !label.startsWith('horizon::'))
+            .map((label) => (
+              <span
+                key={label}
+                className="rounded-[5px] bg-accent px-[7px] py-0.5 text-[10px] font-medium text-accent-foreground"
+              >
+                {label}
+              </span>
+            ))}
+        </div>
+        <div className="mt-3 flex items-center gap-1.5">
+          <Button size="xs" variant="outline" onClick={() => setEditing(!editing)}>
             {editing ? 'Cancelar' : 'Editar'}
           </Button>
           {editing && (
-            <Button size="sm" onClick={save} disabled={busy}>
+            <Button size="xs" onClick={save} disabled={busy}>
               Salvar
             </Button>
           )}
           <Button
-            size="sm"
+            size="xs"
             variant="outline"
             onClick={() =>
               mutate(() =>
@@ -126,12 +144,12 @@ export function IssueDetailPanel({
             {issue.state === 'closed' ? 'Reabrir' : 'Fechar'}
           </Button>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="text-[10px] font-medium uppercase text-muted-foreground">
-            Status
+        <div className="mt-2.5 flex items-center gap-2.5">
+          <label className="text-xs font-medium text-foreground">
+            <span className="sr-only">Status</span>
             <select
               aria-label="Status"
-              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+              className="h-[30px] rounded-lg border bg-background px-[11px] text-xs text-foreground"
               value={properties.conflicts.status ? '' : properties.status}
               onChange={(event) =>
                 void mutate(() =>
@@ -148,11 +166,11 @@ export function IssueDetailPanel({
               ))}
             </select>
           </label>
-          <label className="text-[10px] font-medium uppercase text-muted-foreground">
-            Prioridade
+          <label className="text-[11px] font-medium text-muted-foreground">
+            <span className="sr-only">Prioridade</span>
             <select
               aria-label="Prioridade"
-              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs text-foreground"
+              className="h-[30px] rounded-md border border-transparent bg-transparent px-1 font-mono text-[11px] text-muted-foreground"
               value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}
               onChange={(event) =>
                 void mutate(() =>
@@ -176,7 +194,27 @@ export function IssueDetailPanel({
           </p>
         ) : null}
       </header>
-      <div className="flex-1 overflow-auto p-4">
+      <div className="grid flex-none grid-cols-2 gap-x-[18px] gap-y-[7px] border-b px-[18px] pt-3 pb-[13px] text-[11.5px]">
+        <DetailMeta
+          label="Responsável"
+          value={issue.assignees.map((user) => user.name).join(', ') || 'Não atribuído'}
+        />
+        <DetailMeta label="Autor" value={issue.author?.name ?? '—'} />
+        <DetailMeta
+          label="Atualizado"
+          value={issue.updatedAt ? new Date(issue.updatedAt).toLocaleDateString('pt-BR') : '—'}
+        />
+        <a
+          href={issue.webUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary hover:underline"
+        >
+          Abrir no GitLab ↗
+        </a>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-[18px] pt-4 pb-5">
+        <DetailHeading>Descrição</DetailHeading>
         {editing ? (
           <div className="mb-5 space-y-3">
             <textarea
@@ -227,22 +265,27 @@ export function IssueDetailPanel({
             </label>
           </div>
         ) : (
-          <p className="mb-5 whitespace-pre-wrap text-sm">
+          <p className="whitespace-pre-wrap text-[13px] leading-[1.68] [text-wrap:pretty]">
             {issue.description || 'Sem descrição.'}
           </p>
         )}
-        <h3 className="mb-3 text-xs font-semibold uppercase text-muted-foreground">
-          Discussão ({comments.length})
-        </h3>
+        <div className="mt-5 mb-3.5">
+          <DetailHeading count={comments.length}>Discussão</DetailHeading>
+        </div>
         {comments.map((c) => (
-          <article key={c.id} className="mb-4">
-            <div className="text-xs font-medium">
-              {c.author?.name ?? 'GitLab'}{' '}
-              <time className="ml-2 text-muted-foreground">
-                {new Date(c.createdAt).toLocaleString('pt-BR')}
-              </time>
+          <article key={c.id} className="mb-4 flex gap-2.5">
+            <span className="flex size-6 flex-none items-center justify-center rounded-full bg-accent text-[9.5px] font-semibold text-accent-foreground">
+              {initialsOf(c.author?.name ?? 'GitLab')}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex flex-wrap items-baseline gap-[7px]">
+                <span className="text-[12.5px] font-semibold">{c.author?.name ?? 'GitLab'}</span>
+                <time className="font-mono text-[10.5px] text-muted-foreground">
+                  {new Date(c.createdAt).toLocaleString('pt-BR')}
+                </time>
+              </div>
+              <p className="whitespace-pre-wrap text-[12.5px] leading-[1.6]">{c.body}</p>
             </div>
-            <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>
           </article>
         ))}
       </div>
@@ -252,22 +295,50 @@ export function IssueDetailPanel({
         </p>
       )}
       <form
-        className="border-t p-3"
+        className="flex-none border-t bg-card px-[18px] pt-2.5 pb-3.5"
         onSubmit={(e) => {
           e.preventDefault()
           void sendComment()
         }}
       >
-        <textarea
-          aria-label="Novo comentário"
-          placeholder="Escreva um comentário…"
-          className="w-full rounded border bg-background p-2 text-sm"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
-        <Button className="mt-2" size="sm" type="submit" disabled={busy || !comment.trim()}>
-          Comentar
-        </Button>
+        {composerOpen ? (
+          <>
+            <div className="mb-2 flex items-center justify-between text-[11.5px] text-muted-foreground">
+              <span className="rounded-md bg-secondary px-2.5 py-1 text-foreground">Escrever</span>
+              <span className="font-mono text-[10px]">Markdown</span>
+            </div>
+            <textarea
+              autoFocus
+              aria-label="Novo comentário"
+              placeholder="Escreva um comentário…"
+              className="h-[74px] w-full resize-none rounded-lg border bg-background px-[11px] py-[9px] text-[12.5px] leading-[1.55] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button
+                size="xs"
+                type="button"
+                variant="outline"
+                onClick={() => setComposerOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button size="xs" type="submit" disabled={busy || !comment.trim()}>
+                Comentar
+              </Button>
+            </div>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setComposerOpen(true)}
+            className="flex h-9 w-full items-center gap-[9px] rounded-lg border bg-background px-3 text-left text-[12.5px] text-muted-foreground hover:border-primary"
+          >
+            <span className="flex-1">Escrever um comentário…</span>
+            <span className="font-mono text-[10px]">Markdown</span>
+          </button>
+        )}
       </form>
     </aside>
   )
@@ -374,5 +445,36 @@ export function IssueCreateForm({
         Criar issue
       </Button>
     </form>
+  )
+}
+
+function issuePath(webUrl: string) {
+  try {
+    return new URL(webUrl).pathname.split('/-/issues/')[0]?.replace(/^\//, '') ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function DetailMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-[7px]">
+      <span className="flex-none text-muted-foreground">{label}</span>
+      <span className="truncate">{value}</span>
+    </div>
+  )
+}
+
+function DetailHeading({ children, count }: { children: React.ReactNode; count?: number }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-[9px]">
+      <h3 className="text-[10px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+        {children}
+      </h3>
+      <span className="h-px flex-1 bg-border" />
+      {count !== undefined && (
+        <span className="font-mono text-[10.5px] text-muted-foreground">{count}</span>
+      )}
+    </div>
   )
 }
