@@ -150,7 +150,12 @@ function SetupPage() {
                       onChange={(event) =>
                         setFollowGroups((current) =>
                           event.target.checked
-                            ? [...current, group.fullPath]
+                            ? (setSelectedGroups((selected) =>
+                                selected.includes(group.fullPath)
+                                  ? selected
+                                  : [...selected, group.fullPath],
+                              ),
+                              [...current, group.fullPath])
                             : current.filter((path) => path !== group.fullPath),
                         )
                       }

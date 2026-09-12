@@ -1,6 +1,7 @@
 import type { ProviderIssue, ProviderProject } from './provider-read.ts'
 import type { ProviderReadContract, ProviderReadPage, ProviderLabel } from './provider-read.ts'
 import type { ProviderGroup, ProviderUser } from './provider.ts'
+import { readIssueProperties } from './properties.ts'
 
 export type InboxSort = 'updated' | 'created' | 'title'
 export type InboxGroup = 'project' | 'author' | 'assignee' | 'state' | 'label'
@@ -23,9 +24,10 @@ export const filterIssues = (
       (!filters.author || i.author?.username === filters.author) &&
       (!filters.assignee || i.assignees.some((a) => a.username === filters.assignee)) &&
       (!filters.labels?.length || filters.labels.every((l) => i.labels.includes(l))) &&
-      (!filters.state || i.state === filters.state) &&
-      (!filters.priority ||
-        (i as ProviderIssue & { priority?: string }).priority === filters.priority),
+      (!filters.state ||
+        readIssueProperties(i).status === filters.state ||
+        i.state === filters.state) &&
+      (!filters.priority || readIssueProperties(i).priority === filters.priority),
   )
 
 export const searchIssues = (
