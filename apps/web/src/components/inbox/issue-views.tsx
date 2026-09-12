@@ -63,7 +63,7 @@ function IssueMeta({
   code?: string
   className?: string
 }) {
-  const updated = relativeTime(issue.updatedAt)
+  const updated = issue.createdAt ? relativeTime(issue.createdAt) : undefined
   return (
     <div
       className={cn(
@@ -80,8 +80,8 @@ function IssueMeta({
           </span>
           <time
             className="flex-none whitespace-nowrap"
-            dateTime={issue.updatedAt}
-            title={absoluteTime(issue.updatedAt)}
+            dateTime={issue.createdAt}
+            title={absoluteTime(issue.createdAt)}
           >
             {updated}
           </time>
@@ -220,11 +220,7 @@ function IssueCard({
         <PriorityBadge priority={properties.priority} conflict={properties.conflicts.priority} />
         <IssueMeta issue={issue} className="gap-2 text-[10px]" />
         <div className="flex-1" />
-        {issue.assignees.length ? (
-          <AssigneeStack users={issue.assignees} size="xs" />
-        ) : (
-          <span className="font-mono text-[10px] text-muted-foreground/70">sem responsável</span>
-        )}
+        <AssigneeStack users={issue.assignees} size="xs" />
       </div>
     </button>
   )
