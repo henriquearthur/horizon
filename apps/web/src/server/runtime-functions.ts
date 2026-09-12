@@ -7,13 +7,8 @@ import {
   type IssueStatus,
   type UpdateIssueInput,
 } from '@horizon/domain'
-import { SESSION_COOKIE } from './onboarding-functions'
 import { runtime } from './runtime'
 
-const session = async () => {
-  const { getCookie } = await import('@tanstack/react-start/server')
-  return getCookie(SESSION_COOKIE)
-}
 const record = (input: unknown): Record<string, unknown> => {
   if (!input || typeof input !== 'object') throw new Error('Dados da ação inválidos.')
   return input as Record<string, unknown>
@@ -25,13 +20,19 @@ const issueRef = (input: unknown) => {
   return { projectId: value.projectId as number, iid: value.iid as number }
 }
 
-export const getRuntimeSnapshot = createServerFn({ method: 'GET' }).handler(async () =>
-  runtime.snapshot(await session()),
-)
+export const getRuntimeSnapshot = createServerFn({ method: 'GET' })
+  .validator((input: unknown): { force: boolean } => ({
+    force: Boolean((input as { force?: unknown } | undefined)?.force),
+  }))
+  .handler(({ data }) => runtime.snapshot(data))
 
-export const getIssueDetail = createServerFn({ method: 'GET' })
+export const getIssue = createServerFn({ method: 'GET' })
   .validator(issueRef)
-  .handler(async ({ data }) => runtime.issueDetail(await session(), data.projectId, data.iid))
+  .handler(({ data }) => runtime.readIssue(data.projectId, data.iid))
+
+export const getIssueComments = createServerFn({ method: 'GET' })
+  .validator(issueRef)
+  .handler(({ data }) => runtime.listComments(data.projectId, data.iid))
 
 export const searchRuntimeDiscussions = createServerFn({ method: 'GET' })
   .validator((input): { query: string } => {
@@ -39,9 +40,7 @@ export const searchRuntimeDiscussions = createServerFn({ method: 'GET' })
     if (typeof value.query !== 'string') throw new Error('Busca inválida.')
     return { query: value.query.trim() }
   })
-  .handler(async ({ data }) =>
-    data.query ? runtime.searchDiscussions(await session(), data.query) : [],
-  )
+  .handler(({ data }) => (data.query ? runtime.searchDiscussions(data.query) : []))
 
 export const createRuntimeIssue = createServerFn({ method: 'POST' })
   .validator((input): CreateIssueInput => {
@@ -64,7 +63,7 @@ export const createRuntimeIssue = createServerFn({ method: 'POST' })
         : {}),
     }
   })
-  .handler(async ({ data }) => runtime.createIssue(await session(), data))
+  .handler(({ data }) => runtime.createIssue(data))
 
 export const updateRuntimeIssue = createServerFn({ method: 'POST' })
   .validator((input): { projectId: number; iid: number; changes: UpdateIssueInput } => {
@@ -85,9 +84,7 @@ export const updateRuntimeIssue = createServerFn({ method: 'POST' })
       },
     }
   })
-  .handler(async ({ data }) =>
-    runtime.updateIssue(await session(), data.projectId, data.iid, data.changes),
-  )
+  .handler(({ data }) => runtime.updateIssue(data.projectId, data.iid, data.changes))
 
 export const createRuntimeComment = createServerFn({ method: 'POST' })
   .validator((input): { projectId: number; iid: number; body: string } => {
@@ -97,9 +94,7 @@ export const createRuntimeComment = createServerFn({ method: 'POST' })
       throw new Error('Escreva um comentário.')
     return { ...ref, body: value.body.trim() }
   })
-  .handler(async ({ data }) =>
-    runtime.createComment(await session(), data.projectId, data.iid, data.body),
-  )
+  .handler(({ data }) => runtime.createComment(data.projectId, data.iid, data.body))
 
 export const setRuntimeIssueState = createServerFn({ method: 'POST' })
   .validator((input): { projectId: number; iid: number; state: 'opened' | 'closed' } => {
@@ -108,9 +103,7 @@ export const setRuntimeIssueState = createServerFn({ method: 'POST' })
     if (value.state !== 'opened' && value.state !== 'closed') throw new Error('Estado inválido.')
     return { ...ref, state: value.state }
   })
-  .handler(async ({ data }) =>
-    runtime.setIssueState(await session(), data.projectId, data.iid, data.state),
-  )
+  .handler(({ data }) => runtime.setIssueState(data.projectId, data.iid, data.state))
 
 export const updateRuntimeIssueProperties = createServerFn({ method: 'POST' })
   .validator(
@@ -140,6 +133,4 @@ export const updateRuntimeIssueProperties = createServerFn({ method: 'POST' })
       }
     },
   )
-  .handler(async ({ data }) =>
-    runtime.updateIssueProperties(await session(), data.projectId, data.iid, data.changes),
-  )
+  .handler(({ data }) => runtime.updateIssueProperties(data.projectId, data.iid, data.changes))

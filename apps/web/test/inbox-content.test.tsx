@@ -56,7 +56,9 @@ describe('InboxContent', () => {
 
     expect(screen.getByText('Backlog issue')).toBeInTheDocument()
     expect(screen.getByText('Done issue')).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('Filtrar por status'), 'Concluído')
+    await userEvent.click(screen.getByRole('button', { name: '+ Filtro' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Status' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Concluído' }))
     expect(screen.queryByText('Backlog issue')).not.toBeInTheDocument()
     expect(screen.getByText('Done issue')).toBeInTheDocument()
   })

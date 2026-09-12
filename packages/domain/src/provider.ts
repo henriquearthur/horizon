@@ -1,8 +1,10 @@
-/** The deliberately small Provider contract used by the onboarding flow.
+/** The deliberately small Provider contract used by the setup flow.
  *
  * Horizon only knows these provider neutral records.  The GitLab adapter is
  * responsible for translating GitLab's API representation into them.
  */
+import { GitLabHttp, GitLabHttpError, type GitLabHttpOptions } from './http.ts'
+
 export interface ProviderConnection {
   readonly url: string
   readonly token: string
@@ -40,7 +42,13 @@ export interface Provider {
 
 export class ProviderError extends Error {
   readonly status: number
-  readonly code: 'invalid-url' | 'unauthorized' | 'forbidden' | 'unavailable' | 'invalid-response'
+  readonly code:
+    | 'invalid-url'
+    | 'unauthorized'
+    | 'forbidden'
+    | 'rate-limited'
+    | 'unavailable'
+    | 'invalid-response'
 
   constructor(
     message: string,
@@ -53,100 +61,67 @@ export class ProviderError extends Error {
   }
 }
 
-const PAGE_SIZE = 100
-
-const toUrl = (raw: string): URL => {
-  let parsed: URL
-  try {
-    parsed = new URL(raw)
-  } catch {
-    throw new ProviderError('Informe uma URL válida do GitLab.', {
-      status: 400,
-      code: 'invalid-url',
-    })
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new ProviderError('A URL do GitLab deve usar HTTP ou HTTPS.', {
-      status: 400,
-      code: 'invalid-url',
-    })
-  }
-  parsed.pathname = parsed.pathname.replace(/\/$/, '')
-  // O GitLab institucional usa a CA privada da SEFA, que não está no trust
-  // store padrão do Node. A exceção fica restrita ao domínio institucional.
-  if (parsed.hostname.endsWith('.sefa.pa.gov.br')) {
-    const nodeProcess = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-      .process
-    if (nodeProcess?.env) nodeProcess.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
-  }
-  return parsed
-}
-
-const messageForStatus = (status: number): ProviderError['code'] =>
+const codeForStatus = (status: number): ProviderError['code'] =>
   status === 401
     ? 'unauthorized'
     : status === 403
       ? 'forbidden'
-      : status >= 500
-        ? 'unavailable'
-        : 'invalid-response'
+      : status === 429
+        ? 'rate-limited'
+        : status >= 500
+          ? 'unavailable'
+          : 'invalid-response'
+
+/** Translates the shared HTTP failure into the Provider vocabulary. */
+export const asProviderError = (error: unknown): ProviderError => {
+  if (error instanceof ProviderError) return error
+  if (error instanceof GitLabHttpError)
+    return new ProviderError(
+      error.failure === 'status' && error.status === 401
+        ? 'Token inválido ou expirado.'
+        : error.failure === 'status' && error.status === 403
+          ? 'Token sem permissão para acessar o GitLab.'
+          : error.message,
+      {
+        status: error.status,
+        code:
+          error.failure === 'status'
+            ? codeForStatus(error.status)
+            : error.failure === 'invalid-response'
+              ? 'invalid-response'
+              : 'unavailable',
+      },
+    )
+  return new ProviderError('Não foi possível conectar ao GitLab.', {
+    status: 503,
+    code: 'unavailable',
+  })
+}
+
+const invalidUrl = (): never => {
+  throw new ProviderError('Informe uma URL válida do GitLab.', {
+    status: 400,
+    code: 'invalid-url',
+  })
+}
 
 /** GitLab REST v4 adapter. It never exposes the token in returned records. */
 export class GitLabProvider implements Provider {
-  readonly #baseUrl: URL
-  readonly #token: string
-  readonly #fetch: typeof fetch
+  readonly #http: GitLabHttp
 
-  constructor(connection: ProviderConnection, fetcher: typeof fetch = fetch) {
-    this.#baseUrl = toUrl(connection.url)
-    this.#token = connection.token
-    this.#fetch = fetcher
+  constructor(
+    connection: ProviderConnection,
+    fetcher: typeof fetch = fetch,
+    options: GitLabHttpOptions = {},
+  ) {
+    this.#http = new GitLabHttp(connection, fetcher, options, invalidUrl)
   }
 
   async #request<T>(path: string, page = 1): Promise<T> {
-    const prefix = this.#baseUrl.pathname.replace(/\/$/, '')
-    const url = new URL(`${prefix}/api/v4/${path}`, this.#baseUrl)
-    url.searchParams.set('page', String(page))
-    url.searchParams.set('per_page', String(PAGE_SIZE))
-    let response: Response
     try {
-      response = await this.#fetch(url, {
-        headers: { 'PRIVATE-TOKEN': this.#token, Accept: 'application/json' },
-        signal: AbortSignal.timeout(15_000),
-      })
+      return (await this.#http.json<T>(this.#http.url(path, page))).value
     } catch (error) {
-      console.error('[horizon] GitLab request failed', {
-        host: this.#baseUrl.host,
-        path,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      throw new ProviderError('Não foi possível conectar ao GitLab.', {
-        status: 503,
-        code: 'unavailable',
-      })
-    }
-    if (!response.ok) {
-      console.info('[horizon] GitLab response', {
-        host: this.#baseUrl.host,
-        path,
-        status: response.status,
-      })
-      throw new ProviderError(
-        response.status === 401
-          ? 'Token inválido ou expirado.'
-          : response.status === 403
-            ? 'Token sem permissão para acessar o GitLab.'
-            : 'O GitLab não respondeu corretamente.',
-        { status: response.status, code: messageForStatus(response.status) },
-      )
-    }
-    try {
-      return (await response.json()) as T
-    } catch {
-      throw new ProviderError('Resposta inválida do GitLab.', {
-        status: 502,
-        code: 'invalid-response',
-      })
+      throw asProviderError(error)
     }
   }
 
@@ -171,21 +146,7 @@ export class GitLabProvider implements Provider {
       'groups?min_access_level=10',
       page,
     )
-    return rows.flatMap((value) =>
-      typeof value.id === 'number' &&
-      typeof value.full_path === 'string' &&
-      typeof value.name === 'string'
-        ? [
-            {
-              id: value.id,
-              fullPath: value.full_path,
-              name: value.name,
-              ...(typeof value.description === 'string' ? { description: value.description } : {}),
-              ...(typeof value.avatar_url === 'string' ? { avatarUrl: value.avatar_url } : {}),
-            },
-          ]
-        : [],
-    )
+    return toGroups(rows)
   }
 
   async listProjects(page = 1): Promise<readonly ProviderProject[]> {
@@ -193,36 +154,61 @@ export class GitLabProvider implements Provider {
       'projects?membership=true&simple=true',
       page,
     )
-    return rows.flatMap((value) => {
-      const namespace = value.namespace
-      if (
-        typeof value.id !== 'number' ||
-        typeof value.path_with_namespace !== 'string' ||
-        typeof value.name !== 'string' ||
-        typeof value.web_url !== 'string'
-      )
-        return []
-      const path =
-        typeof value.path === 'string' ? value.path : value.path_with_namespace.split('/').at(-1)!
-      const namespacePath =
-        typeof namespace === 'object' &&
-        namespace &&
-        typeof (namespace as { full_path?: unknown }).full_path === 'string'
-          ? (namespace as { full_path: string }).full_path
-          : value.path_with_namespace.slice(0, -(path.length + 1))
-      return [
-        {
-          id: value.id,
-          path,
-          name: value.name,
-          namespace: namespacePath,
-          groupPath: namespacePath,
-          webUrl: value.web_url,
-        },
-      ]
-    })
+    return toProjects(rows)
   }
 }
+
+/** Shared GitLab → Horizon mapping, so every adapter agrees on the shape. */
+export const toGroups = (rows: readonly unknown[]): readonly ProviderGroup[] =>
+  (Array.isArray(rows) ? rows : []).flatMap((row) => {
+    const value = row as Record<string, unknown>
+    return typeof value?.id === 'number' &&
+      typeof value.full_path === 'string' &&
+      typeof value.name === 'string'
+      ? [
+          {
+            id: value.id,
+            fullPath: value.full_path,
+            name: value.name,
+            ...(typeof value.description === 'string' ? { description: value.description } : {}),
+            ...(typeof value.avatar_url === 'string' ? { avatarUrl: value.avatar_url } : {}),
+          },
+        ]
+      : []
+  })
+
+export const toProjects = (rows: readonly unknown[]): readonly ProviderProject[] =>
+  (Array.isArray(rows) ? rows : []).flatMap((row) => {
+    const value = row as Record<string, unknown>
+    if (
+      typeof value?.id !== 'number' ||
+      typeof value.path_with_namespace !== 'string' ||
+      typeof value.name !== 'string' ||
+      typeof value.web_url !== 'string'
+    )
+      return []
+    const path =
+      typeof value.path === 'string' && value.path
+        ? value.path
+        : (value.path_with_namespace.split('/').at(-1) ?? value.path_with_namespace)
+    const namespace = value.namespace as { full_path?: unknown } | undefined
+    // The namespace of `team/sub/app` is `team/sub`; falling back to the path
+    // split keeps subgroups correct when GitLab returns the simple record.
+    const namespacePath =
+      typeof namespace?.full_path === 'string'
+        ? namespace.full_path
+        : value.path_with_namespace.split('/').slice(0, -1).join('/')
+    return [
+      {
+        id: value.id,
+        path,
+        name: value.name,
+        namespace: namespacePath,
+        groupPath: namespacePath,
+        webUrl: value.web_url,
+      },
+    ]
+  })
 
 export const createGitLabProvider = (
   connection: ProviderConnection,

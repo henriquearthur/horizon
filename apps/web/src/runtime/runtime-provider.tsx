@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProviderIssue, ProviderWriteContract } from '@horizon/domain'
 import { issueCollection } from '~/db/collections'
 import {
   createRuntimeComment,
   createRuntimeIssue,
-  getIssueDetail,
+  getIssue,
+  getIssueComments,
   getRuntimeSnapshot,
   setRuntimeIssueState,
   updateRuntimeIssue,
@@ -14,18 +15,26 @@ import type { RuntimeSnapshot } from '~/server/runtime'
 
 interface HorizonRuntimeValue {
   readonly snapshot: RuntimeSnapshot | undefined
+  /** True only while there is nothing to show yet. */
   readonly loading: boolean
   readonly refreshing: boolean
   readonly error: string | undefined
   readonly lastUpdated: Date | undefined
-  readonly refresh: () => Promise<void>
+  /** Reloads the snapshot; `force` also bypasses the server-side cache. */
+  readonly refresh: (options?: { force?: boolean }) => Promise<void>
   readonly provider: ProviderWriteContract
   readonly replaceIssue: (issue: ProviderIssue) => void
 }
 
 const HorizonRuntimeContext = createContext<HorizonRuntimeValue | undefined>(undefined)
 const RUNTIME_CACHE_KEY = 'horizon-runtime-snapshot-v1'
-const defaultLoadSnapshot = () => getRuntimeSnapshot()
+const defaultLoadSnapshot = (options: { force: boolean }) => getRuntimeSnapshot({ data: options })
+
+/**
+ * Polling is deliberately slow: the server keeps its own short-lived cache, and
+ * a self-hosted GitLab punishes chatty clients with `429`.
+ */
+const DEFAULT_POLL_INTERVAL_MS = 120_000
 
 const readRuntimeCache = (): RuntimeSnapshot | undefined => {
   if (typeof window === 'undefined') return undefined
@@ -39,13 +48,29 @@ const readRuntimeCache = (): RuntimeSnapshot | undefined => {
   }
 }
 
+const writeRuntimeCache = (snapshot: RuntimeSnapshot): void => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(RUNTIME_CACHE_KEY, JSON.stringify(snapshot))
+  } catch {
+    // A full quota only costs the warm start; it must never break the session.
+    try {
+      window.localStorage.removeItem(RUNTIME_CACHE_KEY)
+    } catch {
+      /* storage unavailable */
+    }
+  }
+}
+
 export function HorizonRuntimeProvider({
   children,
   loadSnapshot = defaultLoadSnapshot,
-  pollingIntervalMs = Number(import.meta.env.VITE_HORIZON_POLL_INTERVAL_MS ?? 30_000),
+  pollingIntervalMs = Number(
+    import.meta.env.VITE_HORIZON_POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS,
+  ),
 }: {
   readonly children: React.ReactNode
-  readonly loadSnapshot?: () => Promise<RuntimeSnapshot>
+  readonly loadSnapshot?: (options: { force: boolean }) => Promise<RuntimeSnapshot>
   readonly pollingIntervalMs?: number
 }) {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | undefined>(() =>
@@ -55,6 +80,8 @@ export function HorizonRuntimeProvider({
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string>()
   const [lastUpdated, setLastUpdated] = useState<Date>()
+  const loadedAt = useRef(0)
+  const running = useRef(false)
 
   const cache = useCallback(async (next: RuntimeSnapshot) => {
     await issueCollection.preload()
@@ -67,37 +94,48 @@ export function HorizonRuntimeProvider({
       else issueCollection.insert(issue)
     }
     setSnapshot(next)
-    if (typeof window !== 'undefined')
-      window.localStorage.setItem(RUNTIME_CACHE_KEY, JSON.stringify(next))
+    writeRuntimeCache(next)
+    loadedAt.current = Date.now()
     setLastUpdated(new Date())
   }, [])
 
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    setError(undefined)
-    try {
-      await cache(await loadSnapshot())
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a Inbox.')
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [cache, loadSnapshot])
+  const refresh = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      // One read at a time: a focus event landing on top of the poll used to
+      // double the load on GitLab for no new data.
+      if (running.current) return
+      running.current = true
+      setRefreshing(true)
+      try {
+        await cache(await loadSnapshot({ force }))
+        setError(undefined)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a Inbox.')
+      } finally {
+        running.current = false
+        setLoading(false)
+        setRefreshing(false)
+      }
+    },
+    [cache, loadSnapshot],
+  )
 
-  useEffect(() => void refresh(), [refresh])
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
   useEffect(() => {
     if (!(pollingIntervalMs > 0)) return
     const timer = globalThis.setInterval(() => void refresh(), pollingIntervalMs)
-    const reactivate = () => {
-      if (document.visibilityState === 'visible') void refresh()
+    // Coming back to the tab is worth one read, but only if the data aged out.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - loadedAt.current >= pollingIntervalMs) void refresh()
     }
-    document.addEventListener('visibilitychange', reactivate)
-    globalThis.addEventListener('focus', reactivate)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       globalThis.clearInterval(timer)
-      document.removeEventListener('visibilitychange', reactivate)
-      globalThis.removeEventListener('focus', reactivate)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [pollingIntervalMs, refresh])
 
@@ -119,10 +157,8 @@ export function HorizonRuntimeProvider({
 
   const provider = useMemo<ProviderWriteContract>(
     () => ({
-      readIssue: async (projectId, iid) =>
-        (await getIssueDetail({ data: { projectId, iid } })).issue,
-      listComments: async (projectId, iid) =>
-        (await getIssueDetail({ data: { projectId, iid } })).comments,
+      readIssue: (projectId, iid) => getIssue({ data: { projectId, iid } }),
+      listComments: (projectId, iid) => getIssueComments({ data: { projectId, iid } }),
       createIssue: async (input) => {
         const issue = await createRuntimeIssue({ data: input })
         replaceIssue(issue)
@@ -149,13 +185,12 @@ export function HorizonRuntimeProvider({
     [replaceIssue],
   )
 
-  return (
-    <HorizonRuntimeContext.Provider
-      value={{ snapshot, loading, refreshing, error, lastUpdated, refresh, provider, replaceIssue }}
-    >
-      {children}
-    </HorizonRuntimeContext.Provider>
+  const value = useMemo<HorizonRuntimeValue>(
+    () => ({ snapshot, loading, refreshing, error, lastUpdated, refresh, provider, replaceIssue }),
+    [snapshot, loading, refreshing, error, lastUpdated, refresh, provider, replaceIssue],
   )
+
+  return <HorizonRuntimeContext.Provider value={value}>{children}</HorizonRuntimeContext.Provider>
 }
 
 export function useHorizonRuntime(): HorizonRuntimeValue {

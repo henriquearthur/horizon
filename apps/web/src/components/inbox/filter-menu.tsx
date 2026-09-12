@@ -11,7 +11,8 @@ interface FilterDefinition {
 export function FilterMenu({ filters }: { filters: readonly FilterDefinition[] }) {
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState(0)
-  const selected = filters[category]!
+  // Filter options come from the snapshot, so the list can shrink under us.
+  const selected = filters[category] ?? filters[0]!
   return (
     <>
       {filters

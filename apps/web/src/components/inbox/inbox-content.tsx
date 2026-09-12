@@ -27,6 +27,10 @@ import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved
 import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
+/** Notes search is expensive on GitLab: only run it for a real term. */
+const MIN_DISCUSSION_QUERY = 3
+const DISCUSSION_SEARCH_DELAY_MS = 450
+
 const selectClass =
   'h-7 rounded-md border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
@@ -100,22 +104,38 @@ export function InboxContent({
     }
   }, [activeSavedView?.id, view._tag])
   useEffect(() => {
-    let active = true
-    if (!query.trim()) {
+    const term = query.trim()
+    if (term.length < MIN_DISCUSSION_QUERY) {
       setDiscussionMatches([])
       return
     }
-    void searchRuntimeDiscussions({ data: { query } })
-      .then((matches) => {
-        if (active) setDiscussionMatches(matches)
-      })
-      .catch(() => {
-        if (active) setDiscussionMatches([])
-      })
+    // Searching notes costs one GitLab call per project, so it waits for the
+    // user to stop typing instead of firing on every keystroke.
+    let active = true
+    const timer = globalThis.setTimeout(() => {
+      void searchRuntimeDiscussions({ data: { query: term } })
+        .then((matches) => {
+          if (active) setDiscussionMatches(matches)
+        })
+        .catch(() => {
+          if (active) setDiscussionMatches([])
+        })
+    }, DISCUSSION_SEARCH_DELAY_MS)
     return () => {
       active = false
+      globalThis.clearTimeout(timer)
     }
   }, [query])
+
+  // Keep the open issue in sync with the Provider, without throwing away an
+  // edit in progress when the poll brings back an identical record.
+  useEffect(() => {
+    setSelected((current) => {
+      if (!current) return current
+      const fresh = snapshot.issues.find((issue) => issue.id === current.id)
+      return fresh && JSON.stringify(fresh) !== JSON.stringify(current) ? fresh : current
+    })
+  }, [snapshot.issues])
 
   const projectById = useMemo(
     () => new Map(snapshot.projects.map((project) => [project.id, project])),

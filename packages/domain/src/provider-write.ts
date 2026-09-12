@@ -1,5 +1,7 @@
+import { GitLabHttp, GitLabHttpError, type GitLabHttpOptions } from './http.ts'
 import type { ProviderConnection, ProviderUser } from './provider.ts'
 import type { ProviderIssue } from './provider-read.ts'
+import { stateForStatus, writeIssueProperties } from './properties.ts'
 import type { IssuePriority, IssueStatus } from './properties.ts'
 
 export interface ProviderComment {
@@ -59,8 +61,9 @@ export class ProviderWriteError extends Error {
   }
 }
 
-const asUser = (value: any): ProviderUser | undefined =>
-  typeof value?.id === 'number' && typeof value?.username === 'string'
+const asUser = (input: unknown): ProviderUser | undefined => {
+  const value = input as Record<string, unknown> | undefined
+  return typeof value?.id === 'number' && typeof value.username === 'string'
     ? {
         id: value.id,
         username: value.username,
@@ -68,14 +71,16 @@ const asUser = (value: any): ProviderUser | undefined =>
         ...(typeof value.avatar_url === 'string' ? { avatarUrl: value.avatar_url } : {}),
       }
     : undefined
+}
 
-const asIssue = (value: any, projectId: number): ProviderIssue => {
+const asIssue = (input: unknown, projectId: number): ProviderIssue => {
+  const value = input as Record<string, unknown>
   if (!(
     typeof value?.id === 'number' &&
-    typeof value?.iid === 'number' &&
-    typeof value?.title === 'string' &&
-    (value?.state === 'opened' || value?.state === 'closed') &&
-    typeof value?.web_url === 'string'
+    typeof value.iid === 'number' &&
+    typeof value.title === 'string' &&
+    (value.state === 'opened' || value.state === 'closed') &&
+    typeof value.web_url === 'string'
   ))
     throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
   const author = asUser(value.author)
@@ -102,11 +107,12 @@ const asIssue = (value: any, projectId: number): ProviderIssue => {
   }
 }
 
-const asComment = (value: any): ProviderComment => {
+const asComment = (input: unknown): ProviderComment => {
+  const value = input as Record<string, unknown>
   if (!(
     typeof value?.id === 'number' &&
-    typeof value?.body === 'string' &&
-    typeof value?.created_at === 'string'
+    typeof value.body === 'string' &&
+    typeof value.created_at === 'string'
   ))
     throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
   const author = asUser(value.author)
@@ -121,64 +127,26 @@ const asComment = (value: any): ProviderComment => {
 
 /** GitLab REST v4 write adapter. Mutations return the Provider-confirmed record. */
 export class GitLabWriteProvider implements ProviderWriteContract {
-  readonly #baseUrl: URL
+  readonly #http: GitLabHttp
   constructor(
-    private readonly connection: ProviderConnection,
-    private readonly fetcher: typeof fetch = fetch,
-    private readonly options: { maxRetries?: number; retryDelayMs?: number } = {},
+    connection: ProviderConnection,
+    fetcher: typeof fetch = fetch,
+    options: GitLabHttpOptions = {},
   ) {
-    this.#baseUrl = new URL(connection.url)
+    this.#http = new GitLabHttp(connection, fetcher, options)
   }
 
-  async #request(path: string, init?: RequestInit): Promise<any> {
-    const prefix = this.#baseUrl.pathname.replace(/\/$/, '')
-    const url = new URL(`${prefix}/api/v4/${path}`, this.#baseUrl)
-    let response: Response | undefined
-    const safe = !init?.method || init.method === 'GET' || init.method === 'PUT'
-    const retries = safe ? Math.max(0, this.options.maxRetries ?? 2) : 0
-    for (let attempt = 0; ; attempt++) {
-      try {
-        response = await this.fetcher(url, {
-          ...init,
-          headers: {
-            'PRIVATE-TOKEN': this.connection.token,
-            Accept: 'application/json',
-            ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-          },
-        })
-      } catch {
-        if (attempt >= retries)
-          throw new ProviderWriteError('Não foi possível conectar ao GitLab.', 503)
-        await this.#pause(attempt)
-        continue
-      }
-      if (response.ok || !this.#transient(response.status) || attempt >= retries) break
-      await this.#pause(attempt)
-    }
-    if (!response) throw new ProviderWriteError('Não foi possível conectar ao GitLab.', 503)
-    if (!response.ok) {
-      const message =
-        response.status === 401
-          ? 'Token inválido ou expirado.'
-          : response.status === 403
-            ? 'Você não tem permissão para realizar esta ação no GitLab.'
-            : 'O GitLab não confirmou a alteração.'
-      throw new ProviderWriteError(message, response.status)
-    }
+  async #request(path: string, init?: RequestInit): Promise<unknown> {
+    // Only idempotent verbs are retried: replaying a POST would duplicate an
+    // issue or a comment.
+    const retry = !init?.method || init.method === 'GET' || init.method === 'PUT'
     try {
-      return await response.json()
-    } catch {
-      throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+      return (await this.#http.json<unknown>(this.#http.url(path), { ...init, retry })).value
+    } catch (error) {
+      throw error instanceof GitLabHttpError
+        ? new ProviderWriteError(error.message, error.status)
+        : error
     }
-  }
-  #transient(status: number) {
-    return status === 408 || status === 429 || status >= 500
-  }
-  #pause(attempt: number) {
-    const delay = this.options.retryDelayMs ?? 0
-    return delay > 0
-      ? new Promise<void>((resolve) => setTimeout(resolve, delay * 2 ** attempt))
-      : Promise.resolve()
   }
 
   readIssue(projectId: number, iid: number) {
@@ -188,14 +156,11 @@ export class GitLabWriteProvider implements ProviderWriteContract {
   }
   listComments(projectId: number, iid: number) {
     return this.#request(
-      `projects/${projectId}/issues/${iid}/notes?sort=asc&order_by=created_at`,
-    ).then((value: unknown) =>
-      Array.isArray(value)
-        ? value.map(asComment)
-        : (() => {
-            throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
-          })(),
-    )
+      `projects/${projectId}/issues/${iid}/notes?sort=asc&order_by=created_at&per_page=100`,
+    ).then((value: unknown) => {
+      if (!Array.isArray(value)) throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+      return value.map(asComment)
+    })
   }
   createIssue(input: CreateIssueInput) {
     const { projectId, ...fields } = input
@@ -227,7 +192,6 @@ export class GitLabWriteProvider implements ProviderWriteContract {
     iid: number,
     changes: { status?: IssueStatus; priority?: IssuePriority },
   ) {
-    const { writeIssueProperties, stateForStatus } = await import('./properties.ts')
     const issue = await this.readIssue(projectId, iid)
     const labels = writeIssueProperties(issue.labels, changes)
     return this.updateIssue(projectId, iid, {
