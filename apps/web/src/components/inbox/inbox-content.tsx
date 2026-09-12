@@ -8,6 +8,7 @@ import {
   readIssueProperties,
   searchIssues,
   sortIssues,
+  viewRefToParam,
   type InboxFilters,
   type InboxGroup,
   type InboxSort,
@@ -47,6 +48,7 @@ import {
 } from '~/components/ui/select'
 import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved-views'
 import { projectPath } from '~/lib/issue-presentation'
+import { horizonIssueHref } from '~/lib/search'
 import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
@@ -195,6 +197,16 @@ export function InboxContent({
     return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
   const grouped = useMemo(() => groupIssues(issues, group), [group, issues])
+  const issueHref = (iid: number) =>
+    horizonIssueHref(
+      {
+        viewParam: viewRefToParam(view),
+        mode,
+        query,
+      },
+      selected?.projectId ?? 0,
+      iid,
+    )
 
   /** Counts come from the Issues the View offers, so a filter never reads `0` by surprise. */
   const countBy = (match: (issue: ProviderIssue) => boolean) => available.filter(match).length
@@ -581,6 +593,7 @@ export function InboxContent({
             currentUser={snapshot.connection.user}
             loading={detailLoading}
             availableLabels={labels}
+            issueHref={issueHref}
           />
         ) : null}
         {detailError ? (

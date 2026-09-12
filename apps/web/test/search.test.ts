@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_VIEW_PARAM, resolveShellSearch, validateShellSearch } from '~/lib/search'
+import {
+  DEFAULT_VIEW_PARAM,
+  horizonIssueHref,
+  resolveShellSearch,
+  validateShellSearch,
+} from '~/lib/search'
 
 describe('validateShellSearch', () => {
   it('keeps the URL clean when everything is at its default', () => {
@@ -47,5 +52,13 @@ describe('resolveShellSearch', () => {
       query: 'ci',
       issueRef: undefined,
     })
+  })
+})
+
+describe('horizonIssueHref', () => {
+  it('preserves the active reading context', () => {
+    expect(
+      horizonIssueHref({ viewParam: 'group:infra', mode: 'kanban', query: 'timeout' }, 7, 193),
+    ).toBe('/?view=group%3Ainfra&mode=kanban&q=timeout&issue=7%3A193')
   })
 })

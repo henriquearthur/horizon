@@ -17,7 +17,11 @@ const scopeInput = (input: unknown): ScopeSelection => {
 /** Whether the deployment is configured and the Escopo is picked. */
 export const getSetupStatus = createServerFn({ method: 'GET' }).handler(() => setup.status())
 
-export const getSetupCatalog = createServerFn({ method: 'GET' }).handler(() => setup.catalog())
+export const getSetupCatalog = createServerFn({ method: 'GET' })
+  .validator((input): { force: boolean } => ({
+    force: Boolean((input as { force?: unknown } | undefined)?.force),
+  }))
+  .handler(({ data }) => setup.catalog(data.force))
 
 export const saveSetupScope = createServerFn({ method: 'POST' })
   .validator(scopeInput)

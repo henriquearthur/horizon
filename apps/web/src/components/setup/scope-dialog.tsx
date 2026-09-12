@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { FolderTree, LoaderCircle } from 'lucide-react'
 import { ScopePicker, type ScopeDraft } from './scope-picker'
 import { Button } from '~/components/ui/button'
@@ -19,30 +19,31 @@ export function ScopeDialog({
   const [scope, setScope] = useState<ScopeDraft>({ groups: [], projects: [] })
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [catalogLoading, setCatalogLoading] = useState(false)
+
+  const loadCatalog = useCallback(async (force = false) => {
+    setCatalogLoading(true)
+    setError(undefined)
+    try {
+      const next = await getSetupCatalog({ data: { force } })
+      setCatalog(next)
+      setScope({ groups: [...next.scope.groups], projects: [...next.scope.projects] })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o Escopo.')
+    } finally {
+      setCatalogLoading(false)
+    }
+  }, [])
 
   // Warm the catalog as soon as the shell mounts. Opening the modal normally
   // reveals the Escopo immediately, without a loading page in between.
   useEffect(() => {
-    let active = true
-    void getSetupCatalog()
-      .then((next) => {
-        if (!active) return
-        setCatalog(next)
-        setScope({ groups: [...next.scope.groups], projects: [...next.scope.projects] })
-      })
-      .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o Escopo.')
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+    void loadCatalog()
+  }, [loadCatalog])
 
   useEffect(() => {
-    if (open && catalog)
-      setScope({ groups: [...catalog.scope.groups], projects: [...catalog.scope.projects] })
-  }, [open, catalog])
+    if (open) void loadCatalog(true)
+  }, [open, loadCatalog])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -51,7 +52,7 @@ export function ScopeDialog({
     try {
       const saved = await saveSetupScope({ data: { ...scope, followGroups: scope.groups } })
       setCatalog((current) => (current ? { ...current, scope: saved } : current))
-      await runtime.refresh({ force: true })
+      await runtime.refresh({ force: true, throwOnError: true })
       onOpenChange(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
@@ -81,19 +82,40 @@ export function ScopeDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             {catalog ? (
-              <ScopePicker
-                groups={catalog.groups}
-                projects={catalog.projects}
-                value={scope}
-                onChange={setScope}
-              />
+              <div className="space-y-3">
+                <ScopePicker
+                  groups={catalog.groups}
+                  projects={catalog.projects}
+                  value={scope}
+                  onChange={setScope}
+                />
+                {error ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <p role="alert">{error}</p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => void loadCatalog(true)}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             ) : error ? (
-              <p
-                role="alert"
-                className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              >
-                {error}
-              </p>
+              <div className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <p role="alert">{error}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => void loadCatalog(true)}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
             ) : (
               <div
                 role="status"
@@ -106,6 +128,15 @@ export function ScopeDialog({
           </div>
 
           <footer className="flex flex-none items-center justify-end gap-2 border-t bg-muted/25 px-6 py-3.5">
+            {catalogLoading && catalog ? (
+              <span
+                role="status"
+                className="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <LoaderCircle aria-hidden className="size-3.5 animate-spin text-primary" />
+                Atualizando…
+              </span>
+            ) : null}
             <Button
               type="button"
               variant="ghost"

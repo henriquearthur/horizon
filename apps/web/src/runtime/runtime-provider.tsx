@@ -22,7 +22,7 @@ interface HorizonRuntimeValue {
   readonly error: string | undefined
   readonly lastUpdated: Date | undefined
   /** Reloads the snapshot; `force` also bypasses the server-side cache. */
-  readonly refresh: (options?: { force?: boolean }) => Promise<void>
+  readonly refresh: (options?: { force?: boolean; throwOnError?: boolean }) => Promise<void>
   readonly provider: ProviderWriteContract
   readonly replaceIssue: (issue: ProviderIssue) => void
 }
@@ -114,7 +114,10 @@ export function HorizonRuntimeProvider({
   }, [])
 
   const refresh = useCallback(
-    async ({ force = false }: { force?: boolean } = {}) => {
+    async ({
+      force = false,
+      throwOnError = false,
+    }: { force?: boolean; throwOnError?: boolean } = {}) => {
       // One read at a time: a focus event landing on top of the poll used to
       // double the load on GitLab for no new data.
       if (running.current) return
@@ -125,6 +128,7 @@ export function HorizonRuntimeProvider({
         setError(undefined)
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a Inbox.')
+        if (throwOnError) throw cause
       } finally {
         running.current = false
         setLoading(false)

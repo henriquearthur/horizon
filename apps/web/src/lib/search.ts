@@ -56,3 +56,17 @@ export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => 
     issueRef: search.issue,
   }
 }
+
+/** Opens an Issue inside Horizon without discarding the current reading context. */
+export const horizonIssueHref = (
+  current: Pick<ResolvedShellSearch, 'viewParam' | 'mode' | 'query'>,
+  projectId: number,
+  iid: number,
+): string => {
+  const params = new URLSearchParams()
+  if (current.viewParam !== DEFAULT_VIEW_PARAM) params.set('view', current.viewParam)
+  if (current.mode !== defaultViewMode) params.set('mode', current.mode)
+  if (current.query) params.set('q', current.query)
+  params.set('issue', `${projectId}:${iid}`)
+  return `/?${params.toString()}`
+}

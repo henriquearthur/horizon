@@ -12,18 +12,28 @@ import { useHorizonRuntime } from '~/runtime/runtime-provider'
  * reach GitLab, it explains exactly what to fix instead of asking for a token.
  */
 export const Route = createFileRoute('/setup')({
-  loader: async (): Promise<{ status: SetupStatus; catalog?: SetupCatalog }> => {
+  loader: async (): Promise<{
+    status: SetupStatus
+    catalog?: SetupCatalog
+    catalogError?: string
+  }> => {
     const status = await getSetupStatus()
-    return {
-      status,
-      ...(status.reachable ? { catalog: await getSetupCatalog() } : {}),
+    if (!status.reachable) return { status }
+    try {
+      return { status, catalog: await getSetupCatalog({ data: { force: false } }) }
+    } catch (cause) {
+      return {
+        status,
+        catalogError:
+          cause instanceof Error ? cause.message : 'Não foi possível carregar grupos e projetos.',
+      }
     }
   },
   component: SetupPage,
 })
 
 function SetupPage() {
-  const { status, catalog } = Route.useLoaderData()
+  const { status, catalog, catalogError } = Route.useLoaderData()
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -36,9 +46,12 @@ function SetupPage() {
         ) : catalog ? (
           <ScopeForm catalog={catalog} host={status.host} />
         ) : (
-          <p role="alert" className="text-sm text-destructive">
-            Não foi possível carregar o Escopo.
-          </p>
+          <Diagnostics
+            status={{
+              ...status,
+              error: catalogError ?? 'Não foi possível carregar grupos e projetos.',
+            }}
+          />
         )}
       </div>
     </main>
@@ -99,7 +112,7 @@ function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | un
     setError(undefined)
     try {
       await saveSetupScope({ data: { ...scope, followGroups: scope.groups } })
-      await runtime.refresh({ force: true })
+      await runtime.refresh({ force: true, throwOnError: true })
       await navigate({ to: '/', search: { view: 'general', mode: 'list' } })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')

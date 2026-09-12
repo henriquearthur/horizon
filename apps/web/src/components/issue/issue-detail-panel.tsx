@@ -45,6 +45,7 @@ export function IssueDetailPanel({
   currentUser,
   users = [],
   availableLabels = [],
+  issueHref,
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
@@ -56,6 +57,7 @@ export function IssueDetailPanel({
   currentUser?: ProviderUser
   users?: readonly ProviderUser[]
   availableLabels?: readonly string[]
+  issueHref: (iid: number) => string
 }) {
   const [editing, setEditing] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
@@ -397,10 +399,7 @@ export function IssueDetailPanel({
                 </Field>
               </div>
             ) : (
-              <Markdown
-                className="text-[13px] leading-[1.7] text-foreground"
-                issueHref={(iid) => `/?issue=${issue.projectId}:${iid}`}
-              >
+              <Markdown className="text-[13px] leading-[1.7] text-foreground" issueHref={issueHref}>
                 {issue.description}
               </Markdown>
             )}
@@ -416,7 +415,7 @@ export function IssueDetailPanel({
                 <CommentList
                   comments={discussion}
                   empty="Nenhum comentário ainda."
-                  projectId={issue.projectId}
+                  issueHref={issueHref}
                 />
               </CollapsibleSection>
             </TabsContent>
@@ -426,7 +425,7 @@ export function IssueDetailPanel({
                   comments={activity}
                   empty="Nenhuma atividade registrada."
                   activity
-                  projectId={issue.projectId}
+                  issueHref={issueHref}
                 />
               </CollapsibleSection>
             </TabsContent>
@@ -717,12 +716,12 @@ function CommentList({
   comments,
   empty,
   activity = false,
-  projectId,
+  issueHref,
 }: {
   comments: readonly ProviderComment[]
   empty: string
   activity?: boolean
-  projectId: number
+  issueHref: (iid: number) => string
 }) {
   if (!comments.length) return <p className="py-2 text-[12.5px] text-muted-foreground">{empty}</p>
   return (
@@ -746,7 +745,7 @@ function CommentList({
             <Markdown
               className="text-[12.5px] leading-[1.65] text-foreground"
               empty=""
-              issueHref={(iid) => `/?issue=${projectId}:${iid}`}
+              issueHref={issueHref}
             >
               {activity ? c.body.replace(/^\w+\s+(added|removed|changed)\s+/i, '') : c.body}
             </Markdown>
