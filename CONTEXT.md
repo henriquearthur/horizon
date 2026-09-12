@@ -10,9 +10,10 @@ an abstract contract; the only implementation is self-hosted GitLab.
 
 ## Conexão
 
-The URL and token that reach one Provider instance. The first version supports
-a single Conexão. The token lives on the server, encrypted at rest; the browser
-only holds a session.
+The URL and token that reach one Provider instance. There is a single Conexão
+per deployment and it comes from the environment — `HORIZON_GITLAB_URL` and
+`HORIZON_GITLAB_TOKEN` — never from the UI. The token stays on the server; the
+browser never sees it. See `docs/adr/0001-conexao-vem-do-ambiente.md`.
 
 ## Escopo
 
