@@ -7,12 +7,13 @@ import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { resolveShellSearch } from '~/lib/search'
 import { activeViewHeading } from '~/lib/view-heading'
-import { getConnection } from '~/server/onboarding-functions'
+import { getSetupStatus } from '~/server/setup-functions'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
 export const Route = createFileRoute('/')({
   beforeLoad: async () => {
-    if (!(await getConnection())) throw redirect({ to: '/setup' })
+    const status = await getSetupStatus()
+    if (!status.reachable || status.scopeEmpty) throw redirect({ to: '/setup' })
   },
   component: IssuesPage,
 })

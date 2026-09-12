@@ -41,6 +41,24 @@ const snapshot: RuntimeSnapshot = {
 describe('InboxContent', () => {
   beforeEach(() => localStorage.clear())
 
+  it('names timestamp sort options explicitly', async () => {
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'all' }}
+        mode="list"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /Atualização/ }))
+    expect(await screen.findByRole('menuitemradio', { name: 'Atualização' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: 'Criação' })).toBeInTheDocument()
+  })
+
   it('filters scoped issues by structured status', async () => {
     render(
       <InboxContent

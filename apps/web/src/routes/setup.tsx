@@ -1,203 +1,139 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { useEffect, useState, type FormEvent } from 'react'
-import type { ProviderGroup, ProviderProject } from '@horizon/domain'
-import { ArrowRight } from 'lucide-react'
-import { HorizonMark } from '~/components/shell/horizon-mark'
 import { ScopePicker, type ScopeDraft } from '~/components/setup/scope-picker'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import {
-  connectGitLab,
-  getConnection,
-  getOnboardingCatalog,
-  saveOnboardingScope,
-} from '~/server/onboarding-functions'
+import { getSetupCatalog, getSetupStatus, saveSetupScope } from '~/server/setup-functions'
+import type { SetupCatalog, SetupStatus } from '~/server/setup'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
-export const Route = createFileRoute('/setup')({ component: SetupPage })
-
-const emptyDraft: ScopeDraft = { groups: [], projects: [], followGroups: [] }
+/**
+ * The Conexão comes from the environment, so `/setup` has one job left:
+ * choosing the Escopo. When the environment is missing or the token does not
+ * reach GitLab, it explains exactly what to fix instead of asking for a token.
+ */
+export const Route = createFileRoute('/setup')({
+  loader: async (): Promise<{ status: SetupStatus; catalog?: SetupCatalog }> => {
+    const status = await getSetupStatus()
+    return { status }
+  },
+  component: SetupPage,
+})
 
 function SetupPage() {
-  const navigate = useNavigate()
-  const runtime = useHorizonRuntime()
-  const [url, setUrl] = useState('')
-  const [token, setToken] = useState('')
-  const [groups, setGroups] = useState<readonly ProviderGroup[]>([])
-  const [projects, setProjects] = useState<readonly ProviderProject[]>([])
-  const [scope, setScope] = useState<ScopeDraft>(emptyDraft)
-  const [step, setStep] = useState<'connection' | 'scope'>('connection')
-  const [error, setError] = useState<string>()
-  const [busy, setBusy] = useState(false)
-
-  const loadCatalog = async () => {
-    const catalog = await getOnboardingCatalog()
-    setGroups(catalog.groups)
-    setProjects(catalog.projects)
-    setScope({
-      groups: [...catalog.scope.groups],
-      projects: [...catalog.scope.projects],
-      followGroups: [...catalog.scope.followGroups],
-    })
-    setStep('scope')
-  }
-
+  const { status } = Route.useLoaderData()
+  const [catalog, setCatalog] = useState<SetupCatalog>()
+  const [catalogError, setCatalogError] = useState<string>()
+  const [catalogAttempt, setCatalogAttempt] = useState(0)
   useEffect(() => {
-    void getConnection()
-      .then(async (connection) => {
-        if (!connection) return
-        setUrl(connection.url)
-        await loadCatalog()
-      })
-      .catch(() => undefined)
-  }, [])
-
-  const submitConnection = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError(undefined)
-    try {
-      await connectGitLab({ data: { url, token } })
-      await loadCatalog()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível validar a Conexão.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const submitScope = async (event: FormEvent) => {
-    event.preventDefault()
-    setBusy(true)
-    setError(undefined)
-    try {
-      const projectsFromSelectedGroups = projects
-        .filter((project) =>
-          scope.groups.some(
-            (group) => project.groupPath === group || project.groupPath?.startsWith(`${group}/`),
-          ),
-        )
-        .map((project) => project.id)
-      await saveOnboardingScope({
-        data: {
-          groups: [...scope.groups],
-          projects: [...new Set([...scope.projects, ...projectsFromSelectedGroups])],
-          followGroups: [...scope.followGroups],
-        },
-      })
-      await runtime.refresh()
-      await navigate({ to: '/' })
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
-    } finally {
-      setBusy(false)
-    }
-  }
+    if (!status.reachable) return
+    void getSetupCatalog()
+      .then(setCatalog)
+      .catch((error) =>
+        setCatalogError(
+          error instanceof Error ? error.message : 'Não foi possível carregar grupos e projetos.',
+        ),
+      )
+  }, [status.reachable, catalogAttempt])
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="animate-rise w-full max-w-2xl rounded-2xl border bg-card p-8 shadow-lg">
-        <div className="mb-6 flex items-center gap-3">
-          <HorizonMark className="size-9 rounded-[10px] shadow-sm" />
-          <div>
-            <p className="font-mono text-[10px] tracking-[0.14em] text-primary uppercase">
-              Configuração inicial
-            </p>
-            <p className="text-[15px] font-semibold tracking-tight">Horizon</p>
-          </div>
-          <div className="flex-1" />
-          <Steps step={step} />
-        </div>
-
-        {step === 'connection' ? (
-          <form onSubmit={submitConnection} className="space-y-5">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Conecte seu GitLab</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                A Conexão é armazenada no servidor. O token nunca volta para o navegador.
-              </p>
-            </div>
-            <label className="block space-y-1.5 text-sm font-medium">
-              URL do GitLab
-              <Input
-                required
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://gitlab.exemplo.com"
-              />
-            </label>
-            <label className="block space-y-1.5 text-sm font-medium">
-              Token de acesso
-              <Input
-                required
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder="glpat-…"
-              />
-            </label>
-            <Message error={error} />
-            <Button disabled={busy} type="submit">
-              {busy ? 'Validando…' : 'Validar Conexão'}
-              <ArrowRight aria-hidden />
-            </Button>
-          </form>
+      <div className="w-full max-w-xl rounded-xl border bg-card p-7 shadow-lg">
+        <p className="mb-2 font-mono text-xs uppercase tracking-widest text-primary">
+          Horizon · configuração
+        </p>
+        {!status.reachable ? (
+          <Diagnostics
+            status={status}
+            onRetry={() => {
+              setCatalogError(undefined)
+              setCatalogAttempt((attempt) => attempt + 1)
+            }}
+          />
+        ) : catalog ? (
+          <ScopeForm catalog={catalog} host={status.host} />
+        ) : catalogError ? (
+          <Diagnostics
+            status={{ ...status, error: catalogError }}
+            onRetry={() => {
+              setCatalogError(undefined)
+              setCatalogAttempt((attempt) => attempt + 1)
+            }}
+          />
         ) : (
-          <form onSubmit={submitScope} className="space-y-5">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Escolha seu Escopo</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Marque grupos inteiros ou projetos soltos. Acompanhar um grupo faz os projetos
-                criados depois entrarem sozinhos.
-              </p>
-            </div>
-            <ScopePicker groups={groups} projects={projects} value={scope} onChange={setScope} />
-            <Message error={error} />
-            <div className="flex items-center gap-2">
-              <Button disabled={busy} type="submit">
-                {busy ? 'Salvando…' : 'Salvar Escopo'}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setStep('connection')}
-                disabled={busy}
-              >
-                Trocar Conexão
-              </Button>
-            </div>
-          </form>
+          <div role="status" className="space-y-3">
+            <h1 className="text-2xl font-semibold">Carregando seu Escopo…</h1>
+            <p className="text-sm text-muted-foreground">
+              A conexão foi validada. Estamos buscando grupos e projetos em segundo plano.
+            </p>
+          </div>
         )}
       </div>
     </main>
   )
 }
 
-function Steps({ step }: { step: 'connection' | 'scope' }) {
+function Diagnostics({ status, onRetry }: { status: SetupStatus; onRetry?: () => void }) {
+  const router = useRouter()
   return (
-    <ol className="flex items-center gap-2 text-[11px] text-muted-foreground">
-      {(['connection', 'scope'] as const).map((value, index) => (
-        <li key={value} className="flex items-center gap-2">
-          <span
-            className={
-              step === value
-                ? 'flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground'
-                : 'flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold'
-            }
-          >
-            {index + 1}
-          </span>
-          {value === 'connection' ? 'Conexão' : 'Escopo'}
-        </li>
-      ))}
-    </ol>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-semibold">Configure a Conexão no ambiente</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          A URL e o token do GitLab são lidos do <code className="font-mono">.env.local</code> do
+          servidor. O token nunca chega ao navegador e não é cadastrado aqui.
+        </p>
+      </div>
+      <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">
+        {`${status.envVars.url}=https://gitlab.exemplo.com\n${status.envVars.token}=glpat-…`}
+      </pre>
+      {status.missing.length ? (
+        <p role="alert" className="text-sm text-destructive">
+          Faltando no ambiente: {status.missing.join(', ')}.
+        </p>
+      ) : null}
+      {status.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {status.error}
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">
+        Depois de editar o arquivo, reinicie o servidor do Horizon e recarregue esta página.
+      </p>
+      <Button
+        onClick={() => {
+          onRetry?.()
+          void router.invalidate()
+        }}
+      >
+        Verificar novamente
+      </Button>
+    </div>
   )
 }
 
-function Message({ error }: { error: string | undefined }) {
-  return error ? (
-    <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-      {error}
-    </p>
-  ) : null
+function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | undefined }) {
+  const navigate = useNavigate()
+  const runtime = useHorizonRuntime()
+  const [scope, setScope] = useState<ScopeDraft>({ groups: [...catalog.scope.groups], projects: [...catalog.scope.projects], followGroups: [...catalog.scope.followGroups] })
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setError(undefined)
+    try {
+      await saveSetupScope({ data: scope })
+      await runtime.refresh({ force: true })
+      await navigate({ to: '/', search: { view: 'inbox', mode: 'list' } })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
+    } finally { setBusy(false) }
+  }
+  return <form onSubmit={(event) => void save(event)} className="space-y-5">
+    <h1 className="text-2xl font-semibold">Escolha seu Escopo</h1>
+    <p className="text-sm text-muted-foreground">{host}</p>
+    <ScopePicker groups={catalog.groups} projects={catalog.projects} value={scope} onChange={setScope} />
+    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+    <Button type="submit" disabled={busy || (!scope.groups.length && !scope.projects.length)}>Abrir Inbox</Button>
+  </form>
 }

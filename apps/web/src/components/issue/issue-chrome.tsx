@@ -92,6 +92,7 @@ export function PriorityBadge({
       </span>
     )
 
+  if (!priority) return null
   const presentation = priorityPresentation(priority)
   return (
     <span

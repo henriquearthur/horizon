@@ -2,6 +2,11 @@ import { groupViewRef, projectViewRef, viewRefToParam } from '@horizon/domain'
 import type { ProviderGroup, ProviderIssue, ProviderProject } from '@horizon/domain'
 import type { SidebarGroupItem, SidebarItem } from '~/components/shell/app-sidebar'
 
+export interface ScopeTree {
+  readonly groups: readonly SidebarGroupItem[]
+  readonly standaloneProjects: readonly SidebarItem[]
+}
+
 /** The group a path belongs under: the longest group path that is a prefix of it. */
 const parentOf = (path: string, paths: readonly string[]): string | undefined =>
   paths
@@ -17,7 +22,7 @@ export const buildScopeTree = (
   groups: readonly ProviderGroup[],
   projects: readonly ProviderProject[],
   issues: readonly ProviderIssue[],
-): readonly SidebarGroupItem[] => {
+): ScopeTree => {
   const paths = groups.map((group) => group.fullPath)
   const issuesByProject = new Map<number, number>()
   for (const issue of issues)
@@ -68,5 +73,10 @@ export const buildScopeTree = (
         }
       })
 
-  return childrenOf(undefined)
+  return {
+    groups: childrenOf(undefined),
+    standaloneProjects: (projectsByGroup.get('__standalone__') ?? []).sort((left, right) =>
+      left.label.localeCompare(right.label),
+    ),
+  }
 }

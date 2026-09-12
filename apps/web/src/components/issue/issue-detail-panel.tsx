@@ -69,14 +69,16 @@ export function IssueDetailPanel({
     setError(undefined)
     try {
       onUpdated(await action())
+      return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível concluir a ação.')
+      return false
     } finally {
       setBusy(false)
     }
   }
   const save = async () => {
-    await mutate(() =>
+    const saved = await mutate(() =>
       provider.updateIssue(issue.projectId, issue.iid, {
         title,
         description,
@@ -84,7 +86,7 @@ export function IssueDetailPanel({
         labels,
       }),
     )
-    setEditing(false)
+    if (saved) setEditing(false)
   }
   const sendComment = async () => {
     if (!comment.trim()) return

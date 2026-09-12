@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { builtinViews } from '@horizon/domain'
 import { describe, expect, it } from 'vitest'
 import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
+import { buildScopeTree } from '~/lib/scope-tree'
 import { renderWithRouter } from './router-harness'
 
 const builtinItems: readonly SidebarItem[] = builtinViews.map((view) => ({
@@ -93,6 +94,34 @@ describe('AppSidebar', () => {
   it('asks for an Escopo when no group is in scope', async () => {
     await renderSidebar()
     expect(screen.getByText('Selecione um Escopo para ver grupos e projetos.')).toBeInTheDocument()
+  })
+
+  it('shows standalone projects as navigable project rows', async () => {
+    const tree = buildScopeTree(
+      [],
+      [
+        {
+          id: 7,
+          path: 'horizon',
+          name: 'Horizon',
+          namespace: 'henrique',
+          webUrl: 'https://gitlab.example.com/henrique/horizon',
+        },
+      ],
+      [{ id: 11, iid: 1, projectId: 7, title: 'Issue', state: 'opened', webUrl: '#', assignees: [], labels: [] }],
+    )
+
+    await renderSidebar({
+      groups: tree.groups,
+      standaloneProjects: tree.standaloneProjects,
+    })
+
+    expect(screen.getByRole('link', { name: /horizon/ })).toHaveAttribute(
+      'href',
+      '/?view=project%3Ahenrique%2Fhorizon',
+    )
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.queryByText('Selecione um Escopo para ver grupos e projetos.')).not.toBeInTheDocument()
   })
 
   it('shows groups with their projects and counts, and collapses them', async () => {

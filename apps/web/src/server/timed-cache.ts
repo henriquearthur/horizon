@@ -8,6 +8,7 @@
 export class TimedCache<T> {
   #value: { readonly data: T; readonly at: number } | undefined
   #inFlight: Promise<T> | undefined
+  #generation = 0
 
   constructor(
     private readonly ttlMs: number,
@@ -19,18 +20,21 @@ export class TimedCache<T> {
     const fresh = this.#value && Date.now() - this.#value.at < this.ttlMs
     if (fresh && !force) return this.#value!.data
     if (this.#inFlight) return this.#inFlight
+    const generation = this.#generation
     const request = this.load()
       .then((data) => {
+        if (generation !== this.#generation) return this.get()
         this.#value = { data, at: Date.now() }
         return data
       })
       .catch((error: unknown) => {
+        if (generation !== this.#generation) return this.get()
         // A failed refresh must not erase a value the user can still use.
         if (this.#value) return this.#value.data
         throw error
       })
       .finally(() => {
-        this.#inFlight = undefined
+        if (this.#inFlight === request) this.#inFlight = undefined
       })
     this.#inFlight = request
     return request
@@ -42,6 +46,8 @@ export class TimedCache<T> {
   }
 
   invalidate(): void {
+    this.#generation += 1
+    this.#inFlight = undefined
     this.#value = undefined
   }
 }

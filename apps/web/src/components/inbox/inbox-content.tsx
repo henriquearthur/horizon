@@ -50,7 +50,7 @@ import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
 const SORTS: readonly { value: InboxSort; label: string }[] = [
-  { value: 'updated', label: 'Mais recentes' },
+  { value: 'updated', label: 'Atualização' },
   { value: 'created', label: 'Criação' },
   { value: 'title', label: 'Título' },
 ]

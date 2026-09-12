@@ -63,7 +63,7 @@ function IssueMeta({
   code?: string
   className?: string
 }) {
-  const updated = issue.createdAt ? relativeTime(issue.createdAt) : undefined
+  const created = issue.createdAt ? relativeTime(issue.createdAt) : undefined
   return (
     <div
       className={cn(
@@ -73,7 +73,7 @@ function IssueMeta({
     >
       {path ? <span className="truncate">{path}</span> : null}
       {code ? <span className="flex-none font-medium text-muted-foreground/90">{code}</span> : null}
-      {updated ? (
+      {created ? (
         <>
           <span aria-hidden className="flex-none opacity-50">
             ·
@@ -83,7 +83,7 @@ function IssueMeta({
             dateTime={issue.createdAt}
             title={absoluteTime(issue.createdAt)}
           >
-            {updated}
+            {created}
           </time>
         </>
       ) : null}

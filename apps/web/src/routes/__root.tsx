@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
-import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
+import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { useSavedViews } from '~/db/use-saved-views'
 import { ThemeProvider, themeBootstrapScript } from '~/lib/theme'
@@ -80,7 +80,7 @@ function AppShell({ children }: { children: ReactNode }) {
   const runtime = useHorizonRuntime()
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
-  const scopeGroups: readonly SidebarGroupItem[] = buildScopeTree(
+  const scopeTree = buildScopeTree(
     runtime.snapshot?.groups ?? [],
     runtime.snapshot?.projects ?? [],
     runtime.snapshot?.issues ?? [],
@@ -132,7 +132,8 @@ function AppShell({ children }: { children: ReactNode }) {
             label: savedView.name,
             icon: '◆',
           }))}
-          groups={scopeGroups}
+          groups={scopeTree.groups}
+          standaloneProjects={scopeTree.standaloneProjects}
         />
         {children}
       </div>

@@ -33,6 +33,7 @@ export interface AppSidebarProps {
   readonly views: readonly SidebarItem[]
   readonly savedViews: readonly SidebarItem[]
   readonly groups: readonly SidebarGroupItem[]
+  readonly standaloneProjects?: readonly SidebarItem[]
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -172,7 +173,13 @@ function GroupRow({
   )
 }
 
-export function AppSidebar({ activeView, views, savedViews, groups }: AppSidebarProps) {
+export function AppSidebar({
+  activeView,
+  views,
+  savedViews,
+  groups,
+  standaloneProjects = [],
+}: AppSidebarProps) {
   return (
     <nav
       aria-label="Navegação do Horizon"
@@ -193,7 +200,16 @@ export function AppSidebar({ activeView, views, savedViews, groups }: AppSidebar
       {groups.map((group) => (
         <GroupRow key={group.path} group={group} activeView={activeView} depth={0} />
       ))}
-      {groups.length === 0 ? <Hint>Selecione um Escopo para ver grupos e projetos.</Hint> : null}
+      {standaloneProjects.map((project) => (
+        <ProjectRow
+          key={project.viewParam}
+          item={project}
+          active={project.viewParam === activeView}
+        />
+      ))}
+      {groups.length === 0 && standaloneProjects.length === 0 ? (
+        <Hint>Selecione um Escopo para ver grupos e projetos.</Hint>
+      ) : null}
     </nav>
   )
 }
