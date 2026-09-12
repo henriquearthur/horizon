@@ -24,6 +24,7 @@ function SetupPage() {
   const [step, setStep] = useState<'connection' | 'scope'>('connection')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  const [session, setSession] = useState<string>()
 
   useEffect(() => {
     void getConnection()
@@ -39,14 +40,15 @@ function SetupPage() {
         setStep('scope')
       })
       .catch(() => undefined)
-  }, [])
+  }, [session])
 
   const submitConnection = async (event: FormEvent) => {
     event.preventDefault()
     setBusy(true)
     setError(undefined)
     try {
-      await connectGitLab({ data: { url, token } })
+      const result = await connectGitLab({ data: { url, token } })
+      setSession(result.session)
       const catalog = await getOnboardingCatalog()
       setGroups(catalog.groups)
       setProjects(catalog.projects)
@@ -67,7 +69,7 @@ function SetupPage() {
     setError(undefined)
     try {
       await saveOnboardingScope({
-        data: { groups: selectedGroups, projects: selectedProjects, followGroups },
+        data: { groups: selectedGroups, projects: selectedProjects, followGroups, session },
       })
       await navigate({ to: '/' })
     } catch (cause) {

@@ -26,19 +26,29 @@ export class OnboardingService {
       createGitLabProvider({ url, token }),
   ) {}
 
-  async connection(): Promise<PublicConnection | undefined> {
+  requireSession(session: string | undefined): void {
+    this.store.requireSession(session)
+  }
+
+  async connection(session?: string): Promise<PublicConnection | undefined> {
+    if (session) this.store.requireSession(session)
     return this.store.getConnection()
   }
 
-  async connect(url: string, token: string): Promise<PublicConnection> {
+  async connect(
+    url: string,
+    token: string,
+  ): Promise<PublicConnection & { readonly session: string }> {
     const provider = this.providerFactory(url.trim(), token.trim())
     // Validate before writing anything. A failed attempt cannot replace a
     // working Conexão, and the token is only ever handed to the server adapter.
     const user = await provider.validateConnection()
-    return this.store.saveConnection(url.trim(), token.trim(), user)
+    const connection = await this.store.saveConnection(url.trim(), token.trim(), user)
+    return { ...connection, session: this.store.createSession() }
   }
 
-  async catalog(): Promise<OnboardingCatalog> {
+  async catalog(session?: string): Promise<OnboardingCatalog> {
+    if (session) this.store.requireSession(session)
     const credentials = await this.store.getCredentials()
     if (!credentials) return { groups: [], projects: [], scope: await this.store.getScope() }
     const provider = this.providerFactory(credentials.url, credentials.token)
@@ -50,7 +60,8 @@ export class OnboardingService {
     return { groups, projects, scope }
   }
 
-  async saveScope(scope: ScopeSelection): Promise<ScopeSelection> {
+  async saveScope(scope: ScopeSelection, session?: string): Promise<ScopeSelection> {
+    if (session) this.store.requireSession(session)
     return this.store.saveScope(scope)
   }
 }

@@ -25,11 +25,9 @@ const dataFile = process.env.HORIZON_DATA_FILE ?? join(process.cwd(), '.horizon'
 
 const encryptionKey = (): Buffer => {
   const configured = process.env.HORIZON_ENCRYPTION_KEY
-  // A development fallback keeps first-run setup usable. Production deployments
-  // should always set this value so restarting the server retains the secret.
-  return createHash('sha256')
-    .update(configured || 'horizon-development-key')
-    .digest()
+  if (!configured || configured.length < 32)
+    throw new Error('HORIZON_ENCRYPTION_KEY deve ter pelo menos 32 caracteres.')
+  return createHash('sha256').update(configured).digest()
 }
 
 const encrypt = (value: string): string => {
@@ -77,11 +75,22 @@ const writeRecord = async (filePath: string, record: DiskRecord): Promise<void> 
 
 /** Server-only repository. Token-bearing records never cross the browser boundary. */
 export class ConnectionStore {
+  private readonly sessions = new Set<string>()
   constructor(private readonly filePath = dataFile) {}
 
   async getConnection(): Promise<StoredConnection | undefined> {
     const record = await readRecord(this.filePath)
     return record ? { url: record.url, user: record.user } : undefined
+  }
+
+  createSession(): string {
+    const session = randomBytes(32).toString('base64url')
+    this.sessions.add(session)
+    return session
+  }
+
+  requireSession(session: string | undefined): void {
+    if (!session || !this.sessions.has(session)) throw new Error('Sessão inválida ou expirada.')
   }
 
   async getCredentials(): Promise<{ readonly url: string; readonly token: string } | undefined> {
@@ -132,7 +141,7 @@ export class ConnectionStore {
         scope.projects.includes(project.id) ||
         (project.groupPath !== undefined &&
           scope.followGroups.some(
-            (group) => project.groupPath === group || project.groupPath.startsWith(`${group}/`),
+            (group) => project.groupPath === group || project.groupPath!.startsWith(`${group}/`),
           )),
     )
     return { groups: selectedGroups, projects: selectedProjects }
