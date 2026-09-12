@@ -69,13 +69,7 @@ function Priority({ issue }: { issue: ProviderIssue }) {
       title={properties.priority ?? 'Sem prioridade'}
       className={`font-mono font-medium ${priority === 'P1' ? 'text-destructive' : 'text-muted-foreground'}`}
     >
-      {properties.conflicts.status || properties.conflicts.priority
-        ? '⚠ Conflito'
-        : properties.conflicts.priority
-          ? '⚠'
-          : priority === 'Sem'
-            ? '—'
-            : (priority ?? '—')}
+      {properties.conflicts.priority ? '⚠ Conflito' : priority === 'Sem' ? '—' : (priority ?? '—')}
     </span>
   )
 }

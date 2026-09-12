@@ -250,20 +250,22 @@ export function InboxContent({
               ]}
               allowEmpty={false}
             />
-            <FilterSelect
-              label="Agrupar"
-              value={group}
-              onChange={(value) => setGroup(value as InboxGroup)}
-              options={[
-                { value: 'project', label: 'Projeto' },
-                { value: 'status', label: 'Status' },
-                { value: 'priority', label: 'Prioridade' },
-                { value: 'author', label: 'Autor' },
-                { value: 'assignee', label: 'Responsável' },
-                { value: 'label', label: 'Label' },
-              ]}
-              allowEmpty={false}
-            />
+            {mode === 'list' ? (
+              <FilterSelect
+                label="Agrupar"
+                value={group}
+                onChange={(value) => setGroup(value as InboxGroup)}
+                options={[
+                  { value: 'project', label: 'Projeto' },
+                  { value: 'status', label: 'Status' },
+                  { value: 'priority', label: 'Prioridade' },
+                  { value: 'author', label: 'Autor' },
+                  { value: 'assignee', label: 'Responsável' },
+                  { value: 'label', label: 'Label' },
+                ]}
+                allowEmpty={false}
+              />
+            ) : null}
             <Button
               size="xs"
               variant="outline"
