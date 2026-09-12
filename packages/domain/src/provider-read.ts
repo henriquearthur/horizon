@@ -246,3 +246,16 @@ export class GitLabReadProvider implements ProviderReadContract {
     return { groups: [], projects, issues }
   }
 }
+
+export async function readAllPages<T>(
+  read: (page: number) => Promise<ProviderReadPage<T>>,
+): Promise<T[]> {
+  const results: T[] = []
+  let page: number | undefined = 1
+  while (page !== undefined) {
+    const batch: ProviderReadPage<T> = await read(page)
+    results.push(...batch.items)
+    page = batch.nextPage
+  }
+  return results
+}
