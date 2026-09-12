@@ -12,18 +12,18 @@ export function HorizonMark({ className }: { className?: string }) {
           <stop offset="100%" stopColor="oklch(0.58 0.14 232)" />
         </linearGradient>
       </defs>
-      <rect width="24" height="24" rx="7" fill="url(#horizon-mark-sky)" />
+      <rect width="24" height="24" rx="7" fill="currentColor" />
       <circle cx="12" cy="13" r="4.25" fill="oklch(0.99 0.03 96)" fillOpacity="0.95" />
       <path
         d="M4 15.25h16"
-        stroke="oklch(0.18 0.04 232)"
+        stroke="currentColor"
         strokeOpacity="0.55"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
       <path
         d="M6.5 18h11"
-        stroke="oklch(0.18 0.04 232)"
+        stroke="currentColor"
         strokeOpacity="0.3"
         strokeWidth="1.4"
         strokeLinecap="round"
