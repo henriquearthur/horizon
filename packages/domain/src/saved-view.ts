@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import type { ViewRef } from './view.ts'
+import { PRIORITY_VALUES, STATUS_VALUES } from './properties.ts'
 
 const SavedViewMode = Schema.Literals(['list', 'kanban'])
 const SavedViewSort = Schema.Literals(['updated', 'created', 'title'])
@@ -11,14 +12,8 @@ const SavedViewGroup = Schema.Literals([
   'priority',
   'label',
 ])
-const SavedViewStatus = Schema.Literals(['Backlog', 'Em andamento', 'Concluído'])
-const SavedViewPriority = Schema.Literals([
-  'P1 urgente',
-  'P2 alta',
-  'P3 média',
-  'P4 baixa',
-  'Sem prioridade',
-])
+const SavedViewStatus = Schema.Literals(STATUS_VALUES)
+const SavedViewPriority = Schema.Literals(PRIORITY_VALUES)
 
 /**
  * A View the user named and kept. Horizon owns this data; the Provider never

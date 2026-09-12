@@ -56,6 +56,12 @@ export const createRuntimeIssue = createServerFn({ method: 'POST' })
       projectId: value.projectId as number,
       title: value.title.trim(),
       ...(typeof value.description === 'string' ? { description: value.description } : {}),
+      ...(Array.isArray(value.assigneeIds)
+        ? { assigneeIds: value.assigneeIds.filter((id): id is number => Number.isInteger(id)) }
+        : {}),
+      ...(Array.isArray(value.labels)
+        ? { labels: value.labels.filter((label): label is string => typeof label === 'string') }
+        : {}),
     }
   })
   .handler(async ({ data }) => runtime.createIssue(await session(), data))
