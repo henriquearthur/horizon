@@ -22,6 +22,10 @@ export interface ProviderIssue {
   readonly updatedAt?: string
   readonly status?: string
   readonly priority?: string
+  /** Merge requests the Provider links to this Issue. */
+  readonly mergeRequestCount?: number
+  /** Comments on the Issue, as counted by the Provider. */
+  readonly commentCount?: number
 }
 export interface ProviderReadPage<T> {
   readonly items: readonly T[]
@@ -195,6 +199,10 @@ export class GitLabReadProvider implements ProviderReadContract {
               : [],
             ...(typeof v.created_at === 'string' ? { createdAt: v.created_at } : {}),
             ...(typeof v.updated_at === 'string' ? { updatedAt: v.updated_at } : {}),
+            ...(typeof v.merge_requests_count === 'number'
+              ? { mergeRequestCount: v.merge_requests_count }
+              : {}),
+            ...(typeof v.user_notes_count === 'number' ? { commentCount: v.user_notes_count } : {}),
           },
         ]
       }),

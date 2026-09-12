@@ -4,6 +4,7 @@ import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { InboxContent } from '~/components/inbox/inbox-content'
 import { Button } from '~/components/ui/button'
+import { Skeleton } from '~/components/ui/skeleton'
 import { resolveShellSearch } from '~/lib/search'
 import { activeViewHeading } from '~/lib/view-heading'
 import { getConnection } from '~/server/onboarding-functions'
@@ -28,8 +29,21 @@ function IssuesPage() {
       {runtime.loading ? (
         <>
           <ContentToolbar />
-          <div className="flex-1 overflow-y-auto" aria-busy="true">
-            <EmptyState>Carregando issues do Escopo…</EmptyState>
+          <div className="flex-1 overflow-y-auto px-2 pt-2" aria-busy="true">
+            <span className="sr-only">Carregando issues do Escopo…</span>
+            {Array.from({ length: 7 }, (_, row) => (
+              <div key={row} className="flex items-start gap-3 rounded-xl px-3.5 py-2.5">
+                <Skeleton className="mt-1.5 size-[7px] rounded-full" />
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <Skeleton
+                    className="h-3.5 rounded-full"
+                    style={{ width: `${52 + ((row * 13) % 34)}%` }}
+                  />
+                  <Skeleton className="h-2.5 w-40 rounded-full" />
+                </div>
+                <Skeleton className="size-[21px] rounded-full" />
+              </div>
+            ))}
           </div>
         </>
       ) : runtime.error || !runtime.snapshot ? (

@@ -37,9 +37,11 @@ export const defaultViewMode: ViewMode = 'list'
 /** Which View the content area is showing. */
 export type ViewRef =
   | { readonly _tag: 'Builtin'; readonly id: BuiltinViewId }
+  | { readonly _tag: 'Group'; readonly path: string }
   | { readonly _tag: 'Project'; readonly path: string }
   | { readonly _tag: 'Saved'; readonly id: string }
 
+const GROUP_PREFIX = 'group:'
 const PROJECT_PREFIX = 'project:'
 const SAVED_PREFIX = 'saved:'
 
@@ -55,9 +57,16 @@ export const decodeViewMode = (input: unknown): ViewMode =>
 
 export const projectViewRef = (path: string): ViewRef => ({ _tag: 'Project', path })
 
+/** The View that shows every Issue under a group and its subgroups. */
+export const groupViewRef = (path: string): ViewRef => ({ _tag: 'Group', path })
+
 /** Decodes a URL search param into a View reference, falling back to the Inbox. */
 export const decodeViewRef = (input: unknown): ViewRef => {
   if (typeof input !== 'string') return defaultViewRef
+  if (input.startsWith(GROUP_PREFIX)) {
+    const path = input.slice(GROUP_PREFIX.length)
+    return path.length > 0 ? groupViewRef(path) : defaultViewRef
+  }
   if (input.startsWith(PROJECT_PREFIX)) {
     const path = input.slice(PROJECT_PREFIX.length)
     return path.length > 0 ? projectViewRef(path) : defaultViewRef
@@ -77,6 +86,8 @@ export const viewRefToParam = (ref: ViewRef): string => {
   switch (ref._tag) {
     case 'Builtin':
       return ref.id
+    case 'Group':
+      return GROUP_PREFIX + ref.path
     case 'Project':
       return PROJECT_PREFIX + ref.path
     case 'Saved':

@@ -14,7 +14,19 @@ const builtinItems: readonly SidebarItem[] = builtinViews.map((view) => ({
 const groups: readonly SidebarGroupItem[] = [
   {
     path: 'infra',
+    label: 'infra',
+    viewParam: 'group:infra',
     count: '3',
+    groups: [
+      {
+        path: 'infra/edge',
+        label: 'edge',
+        viewParam: 'group:infra/edge',
+        count: '1',
+        groups: [],
+        projects: [{ viewParam: 'project:infra/edge/cdn', label: 'cdn', count: '1' }],
+      },
+    ],
     projects: [
       { viewParam: 'project:infra/terraform-aws', label: 'terraform-aws', count: '2' },
       { viewParam: 'project:infra/k8s-clusters', label: 'k8s-clusters', count: '1' },
@@ -92,8 +104,24 @@ describe('AppSidebar', () => {
     )
     expect(screen.getByText('2')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /infra/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Recolher infra' }))
 
     expect(screen.queryByRole('link', { name: /terraform-aws/ })).not.toBeInTheDocument()
+  })
+
+  it('navigates to a group View when the group name is clicked', async () => {
+    await renderSidebar({ groups })
+    expect(screen.getByRole('link', { name: /infra\// })).toHaveAttribute(
+      'href',
+      '/?view=group%3Ainfra',
+    )
+  })
+
+  it('nests subgroups under their parent group', async () => {
+    await renderSidebar({ groups })
+    expect(screen.getByRole('link', { name: /edge\// })).toHaveAttribute(
+      'href',
+      '/?view=group%3Ainfra%2Fedge',
+    )
   })
 })
