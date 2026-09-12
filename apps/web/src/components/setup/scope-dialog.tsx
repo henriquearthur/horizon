@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { FolderTree, LoaderCircle } from 'lucide-react'
 import { ScopePicker, type ScopeDraft } from './scope-picker'
 import { Button } from '~/components/ui/button'
@@ -20,14 +20,18 @@ export function ScopeDialog({
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [catalogLoading, setCatalogLoading] = useState(false)
+  const draftVersion = useRef(0)
 
   const loadCatalog = useCallback(async (force = false) => {
+    const versionAtStart = draftVersion.current
     setCatalogLoading(true)
     setError(undefined)
     try {
       const next = await getSetupCatalog({ data: { force } })
       setCatalog(next)
-      setScope({ groups: [...next.scope.groups], projects: [...next.scope.projects] })
+      // A slow refresh must not erase choices made while the picker was usable.
+      if (draftVersion.current === versionAtStart)
+        setScope({ groups: [...next.scope.groups], projects: [...next.scope.projects] })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o Escopo.')
     } finally {
@@ -87,7 +91,10 @@ export function ScopeDialog({
                   groups={catalog.groups}
                   projects={catalog.projects}
                   value={scope}
-                  onChange={setScope}
+                  onChange={(next) => {
+                    draftVersion.current += 1
+                    setScope(next)
+                  }}
                 />
                 {error ? (
                   <div className="flex items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
