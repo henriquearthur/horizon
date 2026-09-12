@@ -29,7 +29,7 @@ export const readIssueProperties = (issue: Pick<ProviderIssue, 'labels' | 'state
   const status = parse(issue.labels, 'status', STATUS_VALUES)
   const priority = parse(issue.labels, 'priority', PRIORITY_VALUES)
   return {
-    status: (status.value as IssueStatus | undefined) ?? 'Backlog',
+    status: (status.value as IssueStatus | undefined) ?? (issue.state === 'closed' ? 'Concluído' : 'Backlog'),
     priority: priority.value as IssuePriority | undefined,
     conflicts: { status: status.conflict, priority: priority.conflict },
     statusLabels: status.labels,

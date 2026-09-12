@@ -31,9 +31,7 @@ export interface ProviderReadContract {
   listUsers(projectId: number, page?: number): Promise<ProviderReadPage<ProviderUser>>
   listLabels(projectId: number, page?: number): Promise<ProviderReadPage<ProviderLabel>>
   listIssues(projectId: number, page?: number): Promise<ProviderReadPage<ProviderIssue>>
-  readScope(
-    scope: ScopeSelection,
-  ): Promise<{
+  readScope(scope: ScopeSelection): Promise<{
     groups: readonly ProviderGroup[]
     projects: readonly ProviderProject[]
     issues: readonly ProviderIssue[]
