@@ -38,7 +38,7 @@ export const buildScopeTree = (
     const target = owner ?? `__standalone__`
     const count = issuesByProject.get(project.id) ?? 0
     projectsByGroup.set(target, [
-      ...(projectsByGroup.get(owner) ?? []),
+      ...(projectsByGroup.get(target) ?? []),
       {
         viewParam: viewRefToParam(projectViewRef(`${project.namespace}/${project.path}`)),
         label: project.path,
