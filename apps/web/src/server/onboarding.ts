@@ -6,6 +6,7 @@ import {
   type ProviderUser,
 } from '@horizon/domain'
 import { connectionStore, type ScopeSelection, type StoredConnection } from './connection-store'
+import { log, logError } from './logger'
 
 export interface PublicConnection {
   readonly url: string
@@ -41,15 +42,33 @@ export class OnboardingService {
     url: string,
     token: string,
   ): Promise<PublicConnection & { readonly session: string }> {
-    const provider = this.providerFactory(url.trim(), token.trim())
+    const cleanUrl = url.trim()
+    const started = Date.now()
+    log('gitlab.connect.start', { host: new URL(cleanUrl).host })
+    const provider = this.providerFactory(cleanUrl, token.trim())
     // Validate before writing anything. A failed attempt cannot replace a
     // working Conexão, and the token is only ever handed to the server adapter.
-    const user = await provider.validateConnection()
-    const connection = await this.store.saveConnection(url.trim(), token.trim(), user)
+    let user: ProviderUser
+    try {
+      user = await provider.validateConnection()
+    } catch (error) {
+      logError('gitlab.connect.failed', error, {
+        host: new URL(cleanUrl).host,
+        durationMs: Date.now() - started,
+      })
+      throw error
+    }
+    const connection = await this.store.saveConnection(cleanUrl, token.trim(), user)
+    log('gitlab.connect.success', {
+      host: new URL(cleanUrl).host,
+      userId: user.id,
+      durationMs: Date.now() - started,
+    })
     return { ...connection, session: await this.store.createSession() }
   }
 
   async catalog(session?: string): Promise<OnboardingCatalog> {
+    log('onboarding.catalog.start', { authenticated: Boolean(session) })
     await this.store.requireSession(session)
     const credentials = await this.store.getCredentials()
     if (!credentials) return { groups: [], projects: [], scope: await this.store.getScope() }
@@ -59,10 +78,17 @@ export class OnboardingService {
       readAll((page) => provider.listProjects(page)),
       this.store.getScope(),
     ])
+    log('onboarding.catalog.success', { groups: groups.length, projects: projects.length })
     return { groups, projects, scope }
   }
 
   async saveScope(scope: ScopeSelection, session?: string): Promise<ScopeSelection> {
+    log('onboarding.scope.save', {
+      authenticated: Boolean(session),
+      groups: scope.groups.length,
+      projects: scope.projects.length,
+      followGroups: scope.followGroups.length,
+    })
     await this.store.requireSession(session)
     return this.store.saveScope(scope)
   }

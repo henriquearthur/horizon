@@ -115,12 +115,22 @@ export class GitLabProvider implements Provider {
         signal: AbortSignal.timeout(15_000),
       })
     } catch (error) {
+      console.error('[horizon] GitLab request failed', {
+        host: this.#baseUrl.host,
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      })
       throw new ProviderError('Não foi possível conectar ao GitLab.', {
         status: 503,
         code: 'unavailable',
       })
     }
     if (!response.ok) {
+      console.info('[horizon] GitLab response', {
+        host: this.#baseUrl.host,
+        path,
+        status: response.status,
+      })
       throw new ProviderError(
         response.status === 401
           ? 'Token inválido ou expirado.'
