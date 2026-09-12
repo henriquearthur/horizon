@@ -21,6 +21,16 @@ describe('readStoredTheme', () => {
     expect(readStoredTheme(undefined)).toBe(DEFAULT_THEME)
   })
 
+  it('falls back to the default when storage access is blocked', () => {
+    expect(
+      readStoredTheme({
+        getItem: () => {
+          throw new Error('The operation is insecure.')
+        },
+      }),
+    ).toBe(DEFAULT_THEME)
+  })
+
   it('defaults to dark, like the prototype', () => {
     expect(DEFAULT_THEME).toBe('dark')
   })

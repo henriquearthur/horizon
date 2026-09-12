@@ -13,7 +13,7 @@ keeps the cache, the Views and the preferences.
 
 ## Commands
 
-Run everything from the repository root. Requires Node >= 22 and pnpm.
+Run everything from the repository root. Requires Node >= 22.12 and pnpm.
 
 ```bash
 pnpm install

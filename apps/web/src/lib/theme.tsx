@@ -11,9 +11,18 @@ type ThemeReader = { getItem: (key: string) => string | null } | undefined
 
 const isTheme = (value: unknown): value is Theme => value === 'light' || value === 'dark'
 
-export const readStoredTheme = (storage: ThemeReader): Theme => {
-  const stored = storage?.getItem(THEME_STORAGE_KEY)
-  return isTheme(stored) ? stored : DEFAULT_THEME
+/**
+ * Reads the persisted theme, falling back to the default. Browsers throw on
+ * storage access when cookies are blocked, so the whole read is guarded:
+ * reaching `localStorage` can fail before `getItem` is ever called.
+ */
+export const readStoredTheme = (storage?: ThemeReader): Theme => {
+  try {
+    const stored = (storage ?? globalThis.localStorage)?.getItem(THEME_STORAGE_KEY)
+    return isTheme(stored) ? stored : DEFAULT_THEME
+  } catch {
+    return DEFAULT_THEME
+  }
 }
 
 /**
@@ -39,7 +48,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // paint; this only brings React's state in line with it. Writing the
   // attribute here instead would repaint the default first.
   useEffect(() => {
-    setThemeState(readStoredTheme(globalThis.localStorage))
+    setThemeState(readStoredTheme())
   }, [])
 
   const setTheme = useCallback((next: Theme) => {
