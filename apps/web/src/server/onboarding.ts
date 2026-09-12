@@ -55,8 +55,8 @@ export class OnboardingService {
     if (!credentials) return { groups: [], projects: [], scope: await this.store.getScope() }
     const provider = this.providerFactory(credentials.url, credentials.token)
     const [groups, projects, scope] = await Promise.all([
-      readAll(provider.listGroups),
-      readAll(provider.listProjects),
+      readAll((page) => provider.listGroups(page)),
+      readAll((page) => provider.listProjects(page)),
       this.store.getScope(),
     ])
     return { groups, projects, scope }

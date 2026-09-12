@@ -23,6 +23,7 @@ export interface UpdateIssueInput {
   readonly description?: string
   readonly assigneeIds?: readonly number[]
   readonly labels?: readonly string[]
+  readonly stateEvent?: 'close' | 'reopen'
 }
 
 export interface ProviderWriteContract {
@@ -229,10 +230,12 @@ export class GitLabWriteProvider implements ProviderWriteContract {
     const { writeIssueProperties, stateForStatus } = await import('./properties.ts')
     const issue = await this.readIssue(projectId, iid)
     const labels = writeIssueProperties(issue.labels, changes)
-    const updated = await this.updateIssue(projectId, iid, { labels })
-    return changes.status
-      ? this.setIssueState(projectId, iid, stateForStatus(changes.status))
-      : updated
+    return this.updateIssue(projectId, iid, {
+      labels,
+      ...(changes.status
+        ? { stateEvent: stateForStatus(changes.status) === 'closed' ? 'close' : 'reopen' }
+        : {}),
+    })
   }
 
   #fields(input: Omit<CreateIssueInput, 'projectId'> | UpdateIssueInput): Record<string, unknown> {
@@ -241,6 +244,7 @@ export class GitLabWriteProvider implements ProviderWriteContract {
       ...('description' in input ? { description: input.description ?? '' } : {}),
       ...('assigneeIds' in input ? { assignee_ids: input.assigneeIds ?? [] } : {}),
       ...('labels' in input ? { labels: (input.labels ?? []).join(',') } : {}),
+      ...('stateEvent' in input && input.stateEvent ? { state_event: input.stateEvent } : {}),
     }
   }
 }
