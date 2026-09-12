@@ -220,7 +220,11 @@ function IssueCard({
         <PriorityBadge priority={properties.priority} conflict={properties.conflicts.priority} />
         <IssueMeta issue={issue} className="gap-2 text-[10px]" />
         <div className="flex-1" />
-        <AssigneeStack users={issue.assignees} size="xs" />
+        {issue.assignees.length ? (
+          <AssigneeStack users={issue.assignees} size="xs" />
+        ) : (
+          <span className="font-mono text-[10px] text-muted-foreground/70">sem responsável</span>
+        )}
       </div>
     </button>
   )
