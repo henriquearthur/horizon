@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { HorizonRuntimeProvider, useHorizonRuntime } from '~/runtime/runtime-provider'
+import {
+  HorizonRuntimeProvider,
+  replaceIssueInList,
+  useHorizonRuntime,
+} from '~/runtime/runtime-provider'
 import type { RuntimeSnapshot } from '~/server/runtime'
 
 const snapshot = (title: string): RuntimeSnapshot => ({
@@ -48,6 +52,20 @@ function Consumer() {
 }
 
 describe('HorizonRuntimeProvider', () => {
+  it('preserves the ordering timestamp for assignment-only updates', () => {
+    const current = snapshot('Antes').issues[0]!
+    const positioned = { ...current, updatedAt: '2026-09-01T10:00:00Z' }
+    const assigned = {
+      ...positioned,
+      updatedAt: '2026-09-12T10:00:00Z',
+      assignees: [snapshot('Depois').connection.user],
+    }
+    expect(replaceIssueInList([positioned], assigned, true)[0]).toMatchObject({
+      assignees: assigned.assignees,
+      updatedAt: positioned.updatedAt,
+    })
+  })
+
   it('loads the scoped cache and replaces it after manual refresh', async () => {
     const loadSnapshot = vi
       .fn<() => Promise<RuntimeSnapshot>>()

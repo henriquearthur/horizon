@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { builtinViews } from '@horizon/domain'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
 import { buildScopeTree } from '~/lib/scope-tree'
 import { renderWithRouter } from './router-harness'
@@ -37,39 +37,28 @@ const groups: readonly SidebarGroupItem[] = [
 
 const renderSidebar = (props: Partial<React.ComponentProps<typeof AppSidebar>> = {}, url = '/') =>
   renderWithRouter(
-    <AppSidebar activeView="inbox" views={builtinItems} savedViews={[]} groups={[]} {...props} />,
+    <AppSidebar activeView="general" views={builtinItems} savedViews={[]} groups={[]} {...props} />,
     { url },
   )
 
 describe('AppSidebar', () => {
-  it('lists the builtin Views in prototype order', async () => {
+  it('lists only the Geral builtin View', async () => {
     await renderSidebar()
     const names = screen.getAllByRole('link').map((link) => link.textContent)
-    expect(names).toEqual(['◍Inbox', '≡Todos os issues', '⊞Por projeto', '◐Atribuídos a mim'])
+    expect(names).toEqual(['◍Geral'])
   })
 
   it('marks the active View', async () => {
-    await renderSidebar({ activeView: 'all' })
-    expect(screen.getByRole('link', { name: /Todos os issues/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    )
-    expect(screen.getByRole('link', { name: /Inbox/ })).not.toHaveAttribute('aria-current')
-  })
-
-  it('links each View through the view search param', async () => {
-    await renderSidebar()
-    expect(screen.getByRole('link', { name: /Por projeto/ })).toHaveAttribute(
-      'href',
-      '/?view=by-project',
-    )
+    await renderSidebar({ activeView: 'general' })
+    expect(screen.getByRole('link', { name: /Geral/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /Geral/ })).toHaveAttribute('href', '/')
   })
 
   it('preserves the other search params when switching View', async () => {
     await renderSidebar({}, '/?mode=kanban&q=terraform')
-    expect(screen.getByRole('link', { name: /Todos os issues/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Geral/ })).toHaveAttribute(
       'href',
-      '/?mode=kanban&q=terraform&view=all',
+      '/?mode=kanban&q=terraform',
     )
   })
 
@@ -108,7 +97,18 @@ describe('AppSidebar', () => {
           webUrl: 'https://gitlab.example.com/henrique/horizon',
         },
       ],
-      [{ id: 11, iid: 1, projectId: 7, title: 'Issue', state: 'opened', webUrl: '#', assignees: [], labels: [] }],
+      [
+        {
+          id: 11,
+          iid: 1,
+          projectId: 7,
+          title: 'Issue',
+          state: 'opened',
+          webUrl: '#',
+          assignees: [],
+          labels: [],
+        },
+      ],
     )
 
     await renderSidebar({
@@ -121,7 +121,9 @@ describe('AppSidebar', () => {
       '/?view=project%3Ahenrique%2Fhorizon',
     )
     expect(screen.getByText('1')).toBeInTheDocument()
-    expect(screen.queryByText('Selecione um Escopo para ver grupos e projetos.')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Selecione um Escopo para ver grupos e projetos.'),
+    ).not.toBeInTheDocument()
   })
 
   it('shows groups with their projects and counts, and collapses them', async () => {
@@ -152,5 +154,20 @@ describe('AppSidebar', () => {
       'href',
       '/?view=group%3Ainfra%2Fedge',
     )
+  })
+
+  it('uses a stable switch for empty items', async () => {
+    await renderSidebar({ groups })
+    expect(screen.getByRole('switch', { name: 'Exibir itens sem issues' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('checkbox', { name: 'Exibir itens sem issues' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('opens Escopo without navigating to another page', async () => {
+    const onConfigureScope = vi.fn()
+    await renderSidebar({ groups, onConfigureScope })
+    await userEvent.click(screen.getByRole('button', { name: 'Configurar Escopo' }))
+    expect(onConfigureScope).toHaveBeenCalledOnce()
   })
 })

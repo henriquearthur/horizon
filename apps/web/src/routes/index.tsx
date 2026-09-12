@@ -19,7 +19,7 @@ export const Route = createFileRoute('/')({
 })
 
 function IssuesPage() {
-  const { view, mode, query } = resolveShellSearch(Route.useSearch())
+  const { view, mode, query, issueRef } = resolveShellSearch(Route.useSearch())
   const heading = activeViewHeading(view)
   const runtime = useHorizonRuntime()
   const navigate = useNavigate({ from: '/' })
@@ -64,6 +64,7 @@ function IssuesPage() {
           view={view}
           mode={mode}
           query={query}
+          issueRef={issueRef}
           provider={runtime.provider}
           refresh={runtime.refresh}
           refreshing={runtime.refreshing}
@@ -75,6 +76,12 @@ function IssuesPage() {
                 mode: selection.mode,
                 q: selection.query,
               }),
+            })
+          }
+          onIssueSelected={(next) =>
+            navigate({
+              search: (previous) => ({ ...previous, issue: next }),
+              replace: true,
             })
           }
         />

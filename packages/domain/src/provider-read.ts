@@ -124,7 +124,11 @@ export class GitLabReadProvider implements ProviderReadContract {
     )
   }
   async listProjects(p = 1) {
-    const r = await this.request('projects?membership=true&simple=true', p)
+    // `membership=true` misses projects reached through inherited subgroup
+    // access on some self-hosted GitLab versions. `min_access_level` keeps the
+    // catalog private to what the token can actually read while including
+    // those inherited projects.
+    const r = await this.request('projects?min_access_level=10&simple=true&archived=false', p)
     return page(
       (r.value as any[]).flatMap((v) =>
         typeof v.id === 'number' &&

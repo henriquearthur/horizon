@@ -37,6 +37,19 @@ const defaultLoadSnapshot = (options: { force: boolean }) => getRuntimeSnapshot(
  */
 const DEFAULT_POLL_INTERVAL_MS = 120_000
 
+export const replaceIssueInList = (
+  issues: readonly ProviderIssue[],
+  issue: ProviderIssue,
+  preserveUpdatedAt = false,
+): readonly ProviderIssue[] => {
+  if (!issues.some((item) => item.id === issue.id)) return [issue, ...issues]
+  return issues.map((item) => {
+    if (item.id !== issue.id || !preserveUpdatedAt) return item.id === issue.id ? issue : item
+    const { updatedAt: _providerTimestamp, ...withoutUpdatedAt } = issue
+    return item.updatedAt ? { ...withoutUpdatedAt, updatedAt: item.updatedAt } : withoutUpdatedAt
+  })
+}
+
 const readRuntimeCache = (): RuntimeSnapshot | undefined => {
   if (typeof window === 'undefined') return undefined
   try {
@@ -140,14 +153,12 @@ export function HorizonRuntimeProvider({
     }
   }, [pollingIntervalMs, refresh])
 
-  const replaceIssue = useCallback((issue: ProviderIssue) => {
+  const replaceIssue = useCallback((issue: ProviderIssue, preserveUpdatedAt = false) => {
     setSnapshot((current) =>
       current
         ? {
             ...current,
-            issues: current.issues.some((item) => item.id === issue.id)
-              ? current.issues.map((item) => (item.id === issue.id ? issue : item))
-              : [issue, ...current.issues],
+            issues: replaceIssueInList(current.issues, issue, preserveUpdatedAt),
           }
         : current,
     )
@@ -168,19 +179,31 @@ export function HorizonRuntimeProvider({
       },
       updateIssue: async (projectId, iid, changes) => {
         const issue = await updateRuntimeIssue({ data: { projectId, iid, changes } })
-        replaceIssue(issue)
+        // Assignment is metadata, not a reason to make a card jump to the top
+        // of an update-sorted list while the user is reading it.
+        const assignmentOnly = Object.keys(changes).every((key) => key === 'assigneeIds')
+        replaceIssue(issue, assignmentOnly)
         return issue
       },
       createComment: async (projectId, iid, body) => {
         const comment = await createRuntimeComment({ data: { projectId, iid, body } })
-        setSnapshot((current) => current ? {
-          ...current,
-          issues: current.issues.map((issue) => issue.projectId === projectId && issue.iid === iid
-            ? { ...issue, commentCount: (issue.commentCount ?? 0) + 1 } : issue),
-        } : current)
+        setSnapshot((current) =>
+          current
+            ? {
+                ...current,
+                issues: current.issues.map((issue) =>
+                  issue.projectId === projectId && issue.iid === iid
+                    ? { ...issue, commentCount: (issue.commentCount ?? 0) + 1 }
+                    : issue,
+                ),
+              }
+            : current,
+        )
         for (const issue of issueCollection.values()) {
           if (issue.projectId === projectId && issue.iid === iid) {
-            issueCollection.update(issue.id, (draft) => { draft.commentCount = (draft.commentCount ?? 0) + 1 })
+            issueCollection.update(issue.id, (draft) => {
+              draft.commentCount = (draft.commentCount ?? 0) + 1
+            })
           }
         }
         return comment

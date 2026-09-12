@@ -2,9 +2,9 @@ import { Option, Schema } from 'effect'
 
 /**
  * A View is a named way of looking at the Issues inside the current Escopo.
- * Horizon ships four builtin Views; the user may save more (see issue #8).
+ * Horizon ships one builtin View; the user may save more (see issue #8).
  */
-export const BuiltinViewId = Schema.Literals(['inbox', 'all', 'by-project', 'assigned-to-me'])
+export const BuiltinViewId = Schema.Literals(['general'])
 export type BuiltinViewId = typeof BuiltinViewId.Type
 
 export interface BuiltinView {
@@ -16,15 +16,7 @@ export interface BuiltinView {
 }
 
 export const builtinViews: readonly BuiltinView[] = [
-  { id: 'inbox', icon: '◍', title: 'Inbox', subtitle: 'precisa da sua atenção' },
-  { id: 'all', icon: '≡', title: 'Todos os issues', subtitle: 'todos os grupos e subgrupos' },
-  {
-    id: 'by-project',
-    icon: '⊞',
-    title: 'Por projeto',
-    subtitle: 'agrupado por caminho do repositório',
-  },
-  { id: 'assigned-to-me', icon: '◐', title: 'Atribuídos a mim', subtitle: 'suas issues' },
+  { id: 'general', icon: '◍', title: 'Geral', subtitle: 'issues de todo o Escopo' },
 ]
 
 /** The list and kanban presentations of a View. */
@@ -46,7 +38,7 @@ const PROJECT_PREFIX = 'project:'
 const SAVED_PREFIX = 'saved:'
 
 /** The View Horizon opens on. */
-export const defaultViewRef: ViewRef = { _tag: 'Builtin', id: 'inbox' }
+export const defaultViewRef: ViewRef = { _tag: 'Builtin', id: 'general' }
 
 const decodeBuiltinViewId = Schema.decodeUnknownOption(BuiltinViewId)
 const decodeViewModeOption = Schema.decodeUnknownOption(ViewMode)

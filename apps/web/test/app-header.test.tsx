@@ -9,13 +9,7 @@ import { renderWithRouter } from './router-harness'
 const renderHeader = (props: Partial<React.ComponentProps<typeof AppHeader>> = {}) =>
   renderWithRouter(
     <ThemeProvider>
-      <AppHeader
-        connectionLabel={null}
-        userName={null}
-        query=""
-        onQueryChange={() => {}}
-        {...props}
-      />
+      <AppHeader userName={null} query="" onQueryChange={() => {}} {...props} />
     </ThemeProvider>,
   )
 
@@ -33,15 +27,10 @@ describe('initialsOf', () => {
 })
 
 describe('AppHeader', () => {
-  it('shows the product name and the Conexão host', async () => {
-    await renderHeader({ connectionLabel: 'gitlab.interno' })
-    expect(screen.getByText('Horizon')).toBeInTheDocument()
-    expect(screen.getByText('gitlab.interno')).toBeInTheDocument()
-  })
-
-  it('says there is no Conexão yet', async () => {
+  it('shows the product name without the Conexão host', async () => {
     await renderHeader()
-    expect(screen.getByText('sem conexão')).toBeInTheDocument()
+    expect(screen.getByText('Horizon')).toBeInTheDocument()
+    expect(screen.queryByText(/gitlab/i)).not.toBeInTheDocument()
   })
 
   it('shows the user monogram', async () => {
@@ -63,5 +52,13 @@ describe('AppHeader', () => {
   it('offers the opposite theme on the toggle', async () => {
     await renderHeader()
     expect(screen.getByRole('button', { name: /tema claro/i })).toHaveTextContent('Claro')
+  })
+
+  it('lets the user choose and persist the accent color', async () => {
+    await renderHeader()
+    await userEvent.click(screen.getByRole('button', { name: 'Escolher cor de destaque' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Roxo' }))
+    expect(document.documentElement.dataset.accent).toBe('purple')
+    expect(localStorage.getItem('horizon-accent')).toBe('purple')
   })
 })

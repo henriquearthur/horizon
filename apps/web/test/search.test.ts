@@ -8,10 +8,18 @@ describe('validateShellSearch', () => {
   })
 
   it('keeps non-default values', () => {
-    expect(validateShellSearch({ view: 'all', mode: 'kanban', q: 'terraform' })).toEqual({
-      view: 'all',
+    expect(
+      validateShellSearch({
+        view: 'project:infra/app',
+        mode: 'kanban',
+        q: 'terraform',
+        issue: '7:19',
+      }),
+    ).toEqual({
+      view: 'project:infra/app',
       mode: 'kanban',
       q: 'terraform',
+      issue: '7:19',
     })
   })
 
@@ -24,9 +32,10 @@ describe('resolveShellSearch', () => {
   it('fills in the defaults and decodes the View once', () => {
     expect(resolveShellSearch({})).toEqual({
       viewParam: DEFAULT_VIEW_PARAM,
-      view: { _tag: 'Builtin', id: 'inbox' },
+      view: { _tag: 'Builtin', id: 'general' },
       mode: 'list',
       query: '',
+      issueRef: undefined,
     })
   })
 
@@ -36,6 +45,7 @@ describe('resolveShellSearch', () => {
       view: { _tag: 'Project', path: 'infra/ci' },
       mode: 'kanban',
       query: 'ci',
+      issueRef: undefined,
     })
   })
 })

@@ -1,9 +1,9 @@
-import { Link } from '@tanstack/react-router'
 import { ChevronRight, Folder, Settings2 } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { cn } from '~/lib/utils'
-import { isIssueVisible } from '@horizon/domain'
 import { hueFor } from '~/lib/tint'
+import { Switch } from '~/components/ui/switch'
 
 /** One navigable row in the sidebar: a builtin View, a saved View or a project. */
 export interface SidebarItem {
@@ -35,6 +35,7 @@ export interface AppSidebarProps {
   readonly savedViews: readonly SidebarItem[]
   readonly groups: readonly SidebarGroupItem[]
   readonly standaloneProjects?: readonly SidebarItem[]
+  readonly onConfigureScope?: () => void
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -82,7 +83,10 @@ function ViewRow({ item, active }: { item: SidebarItem; active: boolean }) {
   return (
     <Link
       to="."
-      search={(previous) => ({ ...previous, view: item.viewParam })}
+      search={(previous) => ({
+        ...previous,
+        view: item.viewParam === 'general' ? undefined : item.viewParam,
+      })}
       aria-current={active ? 'page' : undefined}
       className={cn(rowClass(active), 'h-[30px] gap-2.5 text-[12.5px]', active && 'font-medium')}
     >
@@ -180,6 +184,7 @@ export function AppSidebar({
   savedViews,
   groups,
   standaloneProjects = [],
+  onConfigureScope,
 }: AppSidebarProps) {
   const [showEmpty, setShowEmpty] = useState(false)
   const visibleGroups = showEmpty ? groups : groups.flatMap(withIssues)
@@ -203,6 +208,16 @@ export function AppSidebar({
       {savedViews.length === 0 ? <Hint>Aplique filtros e salve para criar uma view.</Hint> : null}
 
       <SectionLabel>Grupos</SectionLabel>
+      {groups.length > 0 || standaloneProjects.length > 0 ? (
+        <label className="mb-2 flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-sidebar-border/70 bg-background/45 px-2.5 py-2 text-[11px] leading-tight text-muted-foreground">
+          <span>Exibir itens sem issues</span>
+          <Switch
+            checked={showEmpty}
+            onCheckedChange={setShowEmpty}
+            aria-label="Exibir itens sem issues"
+          />
+        </label>
+      ) : null}
       {visibleGroups.map((group) => (
         <GroupRow key={group.path} group={group} activeView={activeView} depth={0} />
       ))}
@@ -218,25 +233,15 @@ export function AppSidebar({
       ) : visibleGroups.length === 0 && visibleStandaloneProjects.length === 0 ? (
         <Hint>Nenhum grupo ou projeto tem issues.</Hint>
       ) : null}
-      {groups.length > 0 || standaloneProjects.length > 0 ? (
-        <label className="mt-2 flex cursor-pointer items-center gap-2 px-2.5 text-[11px] text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={showEmpty}
-            onChange={(event) => setShowEmpty(event.target.checked)}
-          />
-          Exibir itens sem issues
-        </label>
-      ) : null}
-
       <SectionLabel>Configuração</SectionLabel>
-      <Link
-        to="/setup"
-        className={cn(rowClass(false), 'h-[30px] gap-2.5 text-[12.5px]')}
+      <button
+        type="button"
+        onClick={onConfigureScope}
+        className={cn(rowClass(false), 'h-[30px] w-full gap-2.5 text-[12.5px]')}
       >
         <Settings2 aria-hidden className="size-3.5" />
         <span>Configurar Escopo</span>
-      </Link>
+      </button>
     </nav>
   )
 }

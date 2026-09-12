@@ -168,16 +168,34 @@ export class GitLabWriteProvider implements ProviderWriteContract {
       asIssue(value, projectId),
     )
   }
-  async listMergeRequests(projectId: number, iid: number): Promise<readonly ProviderMergeRequest[]> {
+  async listMergeRequests(
+    projectId: number,
+    iid: number,
+  ): Promise<readonly ProviderMergeRequest[]> {
     const items: ProviderMergeRequest[] = []
     let page: number | undefined = 1
     while (page !== undefined) {
-      const result = await this.#http.json<unknown>(this.#http.url(`projects/${projectId}/issues/${iid}/related_merge_requests`, page))
-      if (!Array.isArray(result.value)) throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+      const result = await this.#http.json<unknown>(
+        this.#http.url(`projects/${projectId}/issues/${iid}/related_merge_requests`, page),
+      )
+      if (!Array.isArray(result.value))
+        throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
       for (const value of result.value) {
-        if (typeof value?.id !== 'number' || typeof value.iid !== 'number' || typeof value.title !== 'string' || typeof value.state !== 'string' || typeof value.web_url !== 'string')
+        if (
+          typeof value?.id !== 'number' ||
+          typeof value.iid !== 'number' ||
+          typeof value.title !== 'string' ||
+          typeof value.state !== 'string' ||
+          typeof value.web_url !== 'string'
+        )
           throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
-        items.push({ id: value.id, iid: value.iid, title: value.title, state: value.state, webUrl: value.web_url })
+        items.push({
+          id: value.id,
+          iid: value.iid,
+          title: value.title,
+          state: value.state,
+          webUrl: value.web_url,
+        })
       }
       page = nextPageOf(result.response)
     }

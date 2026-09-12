@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeScopeSelection, selectedProjects, type ProviderProject } from '../src/index.ts'
+import {
+  normalizeScopeSelection,
+  selectedGroups,
+  selectedProjects,
+  type ProviderProject,
+} from '../src/index.ts'
 
 const project = (id: number, namespace: string): ProviderProject => ({
   id,
@@ -28,5 +33,19 @@ describe('Escopo', () => {
         (item) => item.id,
       ),
     ).toEqual([1])
+  })
+
+  it('keeps descendant groups so the Escopo hierarchy can be rendered', () => {
+    const selection = normalizeScopeSelection({ groups: ['platform'] })
+    expect(
+      selectedGroups(
+        [
+          { id: 1, fullPath: 'platform', name: 'Platform' },
+          { id: 2, fullPath: 'platform/tools', name: 'Tools' },
+          { id: 3, fullPath: 'other', name: 'Other' },
+        ],
+        selection,
+      ).map((group) => group.fullPath),
+    ).toEqual(['platform', 'platform/tools'])
   })
 })
