@@ -11,6 +11,14 @@ const SavedViewGroup = Schema.Literals([
   'priority',
   'label',
 ])
+const SavedViewStatus = Schema.Literals(['Backlog', 'Em andamento', 'Concluído'])
+const SavedViewPriority = Schema.Literals([
+  'P1 urgente',
+  'P2 alta',
+  'P3 média',
+  'P4 baixa',
+  'Sem prioridade',
+])
 
 /**
  * A View the user named and kept. Horizon owns this data; the Provider never
@@ -27,11 +35,12 @@ export const SavedView = Schema.Struct({
   groupBy: Schema.optional(SavedViewGroup),
   sort: Schema.optional(SavedViewSort),
   projectIds: Schema.optional(Schema.Array(Schema.Number)),
+  groupPaths: Schema.optional(Schema.Array(Schema.String)),
   author: Schema.optional(Schema.String),
   assignee: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Array(Schema.String)),
-  status: Schema.optional(Schema.String),
-  priority: Schema.optional(Schema.String),
+  status: Schema.optional(SavedViewStatus),
+  priority: Schema.optional(SavedViewPriority),
 })
 export type SavedView = typeof SavedView.Type
 

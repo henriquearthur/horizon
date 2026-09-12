@@ -8,6 +8,7 @@ export type InboxSort = 'updated' | 'created' | 'title'
 export type InboxGroup = 'project' | 'author' | 'assignee' | 'status' | 'priority' | 'label'
 export interface InboxFilters {
   projectIds?: readonly number[]
+  groupPaths?: readonly string[]
   author?: string
   assignee?: string
   labels?: readonly string[]
@@ -18,10 +19,17 @@ export interface InboxFilters {
 export const filterIssues = (
   issues: readonly ProviderIssue[],
   filters: InboxFilters = {},
+  projects: readonly ProviderProject[] = [],
 ): readonly ProviderIssue[] =>
   issues.filter(
     (i) =>
       (!filters.projectIds?.length || filters.projectIds.includes(i.projectId)) &&
+      (!filters.groupPaths?.length ||
+        filters.groupPaths.some((group) => {
+          const project = projects.find((candidate) => candidate.id === i.projectId)
+          const path = project?.groupPath ?? project?.namespace
+          return path === group || path?.startsWith(`${group}/`)
+        })) &&
       (!filters.author || i.author?.username === filters.author) &&
       (!filters.assignee || i.assignees.some((a) => a.username === filters.assignee)) &&
       (!filters.labels?.length || filters.labels.every((l) => i.labels.includes(l))) &&
@@ -52,13 +60,13 @@ export const sortIssues = (
   issues: readonly ProviderIssue[],
   sort: InboxSort = 'updated',
 ): readonly ProviderIssue[] =>
-  [...issues].sort((a, b) =>
-    sort === 'title'
-      ? a.title.localeCompare(b.title)
-      : sort === 'created'
-        ? b.id - a.id
-        : b.id - a.id,
-  )
+  [...issues].sort((a, b) => {
+    if (sort === 'title') return a.title.localeCompare(b.title)
+    const field = sort === 'created' ? 'createdAt' : 'updatedAt'
+    const left = a[field] ? Date.parse(a[field]) : a.id
+    const right = b[field] ? Date.parse(b[field]) : b.id
+    return right - left
+  })
 export const groupIssues = (
   issues: readonly ProviderIssue[],
   group: InboxGroup = 'project',
@@ -117,6 +125,9 @@ export class FakeReadProvider implements ProviderReadContract {
   }
   async listIssues(): Promise<ProviderReadPage<ProviderIssue>> {
     return { items: this.data.issues ?? [] }
+  }
+  async searchDiscussions(): Promise<readonly []> {
+    return []
   }
   async readScope(): Promise<{
     groups: readonly ProviderGroup[]

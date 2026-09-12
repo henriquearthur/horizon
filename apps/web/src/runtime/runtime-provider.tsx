@@ -24,18 +24,34 @@ interface HorizonRuntimeValue {
 }
 
 const HorizonRuntimeContext = createContext<HorizonRuntimeValue | undefined>(undefined)
+const RUNTIME_CACHE_KEY = 'horizon-runtime-snapshot-v1'
+const defaultLoadSnapshot = () => getRuntimeSnapshot()
+
+const readRuntimeCache = (): RuntimeSnapshot | undefined => {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(RUNTIME_CACHE_KEY) ?? 'null')
+    return value && typeof value === 'object' && Array.isArray((value as RuntimeSnapshot).issues)
+      ? (value as RuntimeSnapshot)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export function HorizonRuntimeProvider({
   children,
-  loadSnapshot = () => getRuntimeSnapshot(),
+  loadSnapshot = defaultLoadSnapshot,
   pollingIntervalMs = Number(import.meta.env.VITE_HORIZON_POLL_INTERVAL_MS ?? 30_000),
 }: {
   readonly children: React.ReactNode
   readonly loadSnapshot?: () => Promise<RuntimeSnapshot>
   readonly pollingIntervalMs?: number
 }) {
-  const [snapshot, setSnapshot] = useState<RuntimeSnapshot>()
-  const [loading, setLoading] = useState(true)
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot | undefined>(() =>
+    loadSnapshot === defaultLoadSnapshot ? readRuntimeCache() : undefined,
+  )
+  const [loading, setLoading] = useState(snapshot === undefined)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string>()
   const [lastUpdated, setLastUpdated] = useState<Date>()
@@ -51,6 +67,8 @@ export function HorizonRuntimeProvider({
       else issueCollection.insert(issue)
     }
     setSnapshot(next)
+    if (typeof window !== 'undefined')
+      window.localStorage.setItem(RUNTIME_CACHE_KEY, JSON.stringify(next))
     setLastUpdated(new Date())
   }, [])
 

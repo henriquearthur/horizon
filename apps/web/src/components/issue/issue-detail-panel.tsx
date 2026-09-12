@@ -277,15 +277,19 @@ export function IssueCreateForm({
   projectId,
   provider,
   users = [],
+  availableLabels = [],
   onCreated,
 }: {
   projectId: number
   provider: ProviderWriteContract
   users?: readonly ProviderUser[]
+  availableLabels?: readonly string[]
   onCreated: (issue: ProviderIssue) => void
 }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [assigneeIds, setAssigneeIds] = useState<readonly number[]>([])
+  const [labels, setLabels] = useState<readonly string[]>([])
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   return (
@@ -296,7 +300,15 @@ export function IssueCreateForm({
         setBusy(true)
         setError(undefined)
         try {
-          onCreated(await provider.createIssue({ projectId, title: title.trim(), description }))
+          onCreated(
+            await provider.createIssue({
+              projectId,
+              title: title.trim(),
+              description,
+              assigneeIds,
+              labels,
+            }),
+          )
         } catch (x) {
           setError(x instanceof Error ? x.message : 'Não foi possível criar o issue.')
         } finally {
@@ -319,9 +331,40 @@ export function IssueCreateForm({
         placeholder="Descrição"
         className="min-h-32 w-full rounded border bg-background p-2"
       />
-      {users.length > 0 && (
-        <p className="text-xs text-muted-foreground">{users.length} responsáveis disponíveis</p>
-      )}
+      <label className="block text-xs font-medium text-muted-foreground">
+        Responsáveis
+        <select
+          multiple
+          aria-label="Responsáveis do novo issue"
+          className="mt-1 min-h-20 w-full rounded border bg-background p-2 text-sm text-foreground"
+          value={assigneeIds.map(String)}
+          onChange={(event) =>
+            setAssigneeIds([...event.target.selectedOptions].map((option) => Number(option.value)))
+          }
+        >
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name} · @{user.username}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-xs font-medium text-muted-foreground">
+        Labels
+        <select
+          multiple
+          aria-label="Labels do novo issue"
+          className="mt-1 min-h-20 w-full rounded border bg-background p-2 text-sm text-foreground"
+          value={labels}
+          onChange={(event) =>
+            setLabels([...event.target.selectedOptions].map((option) => option.value))
+          }
+        >
+          {availableLabels.map((label) => (
+            <option key={label}>{label}</option>
+          ))}
+        </select>
+      </label>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

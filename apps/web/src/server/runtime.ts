@@ -2,6 +2,7 @@ import {
   GitLabReadProvider,
   GitLabWriteProvider,
   selectedGroups,
+  selectedProjects,
   type CreateIssueInput,
   type IssuePriority,
   type IssueStatus,
@@ -28,6 +29,8 @@ export interface RuntimeSnapshot {
   readonly groups: readonly ProviderGroup[]
   readonly projects: Awaited<ReturnType<ProviderReadContract['readScope']>>['projects']
   readonly issues: readonly ProviderIssue[]
+  readonly users: Awaited<ReturnType<ProviderReadContract['listUsers']>>['items']
+  readonly labels: Awaited<ReturnType<ProviderReadContract['listLabels']>>['items']
 }
 
 export class RuntimeService {
@@ -54,12 +57,22 @@ export class RuntimeService {
       throw new Error('Configure uma Conexão antes de abrir a Inbox.')
     const reader = this.readFactory(credentials)
     const [data, groups] = await Promise.all([reader.readScope(scope), readAllGroups(reader)])
+    const [users, labels] = await Promise.all([
+      Promise.all(
+        data.projects.map((project) => readAllPages((page) => reader.listUsers(project.id, page))),
+      ),
+      Promise.all(
+        data.projects.map((project) => readAllPages((page) => reader.listLabels(project.id, page))),
+      ),
+    ])
     return {
       connection,
       scope,
       groups: selectedGroups(groups, scope),
       projects: data.projects,
       issues: data.issues,
+      users: [...new Map(users.flat().map((user) => [user.id, user])).values()],
+      labels: [...new Map(labels.flat().map((label) => [label.name, label])).values()],
     }
   }
 
@@ -70,6 +83,21 @@ export class RuntimeService {
       provider.listComments(projectId, iid),
     ])
     return { issue, comments }
+  }
+
+  async searchDiscussions(session: string | undefined, query: string) {
+    await this.store.requireSession(session)
+    const [credentials, scope] = await Promise.all([
+      this.store.getCredentials(),
+      this.store.getScope(),
+    ])
+    if (!credentials) throw new Error('Configure uma Conexão antes de buscar discussões.')
+    const reader = this.readFactory(credentials)
+    const projects = await readAllPages((page) => reader.listProjects(page))
+    return reader.searchDiscussions(
+      query,
+      selectedProjects(projects, scope).map((project) => project.id),
+    )
   }
 
   async createIssue(session: string | undefined, input: CreateIssueInput): Promise<ProviderIssue> {
@@ -126,6 +154,17 @@ async function readAllGroups(reader: ProviderReadContract): Promise<readonly Pro
     const result = await reader.listGroups(page)
     groups.push(...result.items)
     if (!result.nextPage) return groups
+  }
+}
+
+async function readAllPages<T>(
+  read: (page: number) => Promise<{ items: readonly T[]; nextPage?: number }>,
+): Promise<readonly T[]> {
+  const items: T[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await read(page)
+    items.push(...result.items)
+    if (!result.nextPage) return items
   }
 }
 

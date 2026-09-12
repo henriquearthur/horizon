@@ -18,6 +18,8 @@ export interface ProviderIssue {
   readonly author?: ProviderUser
   readonly assignees: readonly ProviderUser[]
   readonly labels: readonly string[]
+  readonly createdAt?: string
+  readonly updatedAt?: string
   readonly status?: string
   readonly priority?: string
 }
@@ -25,12 +27,20 @@ export interface ProviderReadPage<T> {
   readonly items: readonly T[]
   readonly nextPage?: number
 }
+export interface ProviderDiscussionMatch {
+  readonly projectId: number
+  readonly iid: number
+}
 export interface ProviderReadContract {
   listGroups(page?: number): Promise<ProviderReadPage<ProviderGroup>>
   listProjects(page?: number): Promise<ProviderReadPage<ProviderProject>>
   listUsers(projectId: number, page?: number): Promise<ProviderReadPage<ProviderUser>>
   listLabels(projectId: number, page?: number): Promise<ProviderReadPage<ProviderLabel>>
   listIssues(projectId: number, page?: number): Promise<ProviderReadPage<ProviderIssue>>
+  searchDiscussions(
+    query: string,
+    projectIds: readonly number[],
+  ): Promise<readonly ProviderDiscussionMatch[]>
   readScope(scope: ScopeSelection): Promise<{
     groups: readonly ProviderGroup[]
     projects: readonly ProviderProject[]
@@ -60,8 +70,8 @@ export class GitLabReadProvider implements ProviderReadContract {
   ) {}
   private async request(path: string, pageNo = 1): Promise<{ value: any; next: string | null }> {
     const base = new URL(this.connection.url)
-    base.pathname = base.pathname.replace(/\/$/, '')
-    const url = new URL(`${base.pathname}/api/v4/${path}`, base)
+    const prefix = base.pathname.replace(/\/$/, '')
+    const url = new URL(`${prefix}/api/v4/${path}`, base)
     url.searchParams.set('page', String(pageNo))
     url.searchParams.set('per_page', '100')
     const retries = Math.max(0, this.options.maxRetries ?? 2)
@@ -183,11 +193,27 @@ export class GitLabReadProvider implements ProviderReadContract {
             labels: Array.isArray(v.labels)
               ? v.labels.filter((x: unknown): x is string => typeof x === 'string')
               : [],
+            ...(typeof v.created_at === 'string' ? { createdAt: v.created_at } : {}),
+            ...(typeof v.updated_at === 'string' ? { updatedAt: v.updated_at } : {}),
           },
         ]
       }),
       r.next,
     )
+  }
+  async searchDiscussions(query: string, projectIds: readonly number[]) {
+    const matches: ProviderDiscussionMatch[] = []
+    for (const projectId of projectIds) {
+      const result = await this.request(
+        `projects/${projectId}/search?scope=notes&search=${encodeURIComponent(query)}`,
+      )
+      matches.push(
+        ...(result.value as any[]).flatMap((value) =>
+          typeof value.noteable_iid === 'number' ? [{ projectId, iid: value.noteable_iid }] : [],
+        ),
+      )
+    }
+    return matches
   }
   async readScope(scope: ScopeSelection) {
     const projects: ProviderProject[] = []

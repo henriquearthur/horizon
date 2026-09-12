@@ -33,6 +33,8 @@ const snapshot = (title: string): RuntimeSnapshot => ({
       labels: [],
     },
   ],
+  users: [],
+  labels: [],
 })
 
 function Consumer() {

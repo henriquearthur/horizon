@@ -96,6 +96,8 @@ const asIssue = (value: any, projectId: number): ProviderIssue => {
     labels: Array.isArray(value.labels)
       ? value.labels.filter((item: unknown): item is string => typeof item === 'string')
       : [],
+    ...(typeof value.created_at === 'string' ? { createdAt: value.created_at } : {}),
+    ...(typeof value.updated_at === 'string' ? { updatedAt: value.updated_at } : {}),
   }
 }
 

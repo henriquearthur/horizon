@@ -33,6 +33,16 @@ export const getIssueDetail = createServerFn({ method: 'GET' })
   .validator(issueRef)
   .handler(async ({ data }) => runtime.issueDetail(await session(), data.projectId, data.iid))
 
+export const searchRuntimeDiscussions = createServerFn({ method: 'GET' })
+  .validator((input): { query: string } => {
+    const value = record(input)
+    if (typeof value.query !== 'string') throw new Error('Busca inválida.')
+    return { query: value.query.trim() }
+  })
+  .handler(async ({ data }) =>
+    data.query ? runtime.searchDiscussions(await session(), data.query) : [],
+  )
+
 export const createRuntimeIssue = createServerFn({ method: 'POST' })
   .validator((input): CreateIssueInput => {
     const value = record(input)

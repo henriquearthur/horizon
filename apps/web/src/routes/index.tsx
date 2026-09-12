@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { ContentHeader } from '~/components/shell/content-header'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
@@ -20,6 +20,7 @@ function IssuesPage() {
   const { view, mode, query } = resolveShellSearch(Route.useSearch())
   const heading = activeViewHeading(view)
   const runtime = useHorizonRuntime()
+  const navigate = useNavigate({ from: '/' })
 
   return (
     <section className="flex min-w-0 flex-1 flex-col">
@@ -51,6 +52,16 @@ function IssuesPage() {
           provider={runtime.provider}
           refresh={runtime.refresh}
           refreshing={runtime.refreshing}
+          onSavedViewSelected={(selection) =>
+            navigate({
+              search: (previous) => ({
+                ...previous,
+                view: selection.view,
+                mode: selection.mode,
+                q: selection.query,
+              }),
+            })
+          }
         />
       )}
     </section>

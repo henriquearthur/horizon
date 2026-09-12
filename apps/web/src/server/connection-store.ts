@@ -1,17 +1,20 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { ProviderGroup, ProviderProject, ProviderUser } from '@horizon/domain'
+import {
+  normalizeScopeSelection,
+  selectedGroups,
+  selectedProjects,
+  type ProviderGroup,
+  type ProviderProject,
+  type ProviderUser,
+  type ScopeSelection,
+} from '@horizon/domain'
+export type { ScopeSelection } from '@horizon/domain'
 
 export interface StoredConnection {
   readonly url: string
   readonly user: ProviderUser
-}
-
-export interface ScopeSelection {
-  readonly groups: readonly string[]
-  readonly projects: readonly number[]
-  readonly followGroups: readonly string[]
 }
 
 interface DiskRecord {
@@ -121,11 +124,7 @@ export class ConnectionStore {
   async saveScope(scope: ScopeSelection): Promise<ScopeSelection> {
     const record = await readRecord(this.filePath)
     if (!record) throw new Error('Configure uma Conexão antes de salvar o Escopo.')
-    const normalized: ScopeSelection = {
-      groups: [...new Set(scope.groups)].filter(Boolean),
-      projects: [...new Set(scope.projects)].filter((id) => Number.isInteger(id)),
-      followGroups: [...new Set(scope.followGroups)].filter((path) => scope.groups.includes(path)),
-    }
+    const normalized = normalizeScopeSelection(scope)
     await writeRecord(this.filePath, { ...record, scope: normalized })
     return normalized
   }
@@ -139,16 +138,10 @@ export class ConnectionStore {
     readonly projects: readonly ProviderProject[]
   }> {
     const scope = await this.getScope()
-    const selectedGroups = groups.filter((group) => scope.groups.includes(group.fullPath))
-    const selectedProjects = projects.filter(
-      (project) =>
-        scope.projects.includes(project.id) ||
-        (project.groupPath !== undefined &&
-          scope.followGroups.some(
-            (group) => project.groupPath === group || project.groupPath!.startsWith(`${group}/`),
-          )),
-    )
-    return { groups: selectedGroups, projects: selectedProjects }
+    return {
+      groups: selectedGroups(groups, scope),
+      projects: selectedProjects(projects, scope),
+    }
   }
 }
 

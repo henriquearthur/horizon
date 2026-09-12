@@ -11,6 +11,7 @@ import {
   type InboxGroup,
   type InboxSort,
   type ProviderComment,
+  type ProviderDiscussionMatch,
   type ProviderIssue,
   type ProviderWriteContract,
   type ViewMode,
@@ -23,6 +24,7 @@ import { EmptyState } from '~/components/shell/empty-state'
 import { Button } from '~/components/ui/button'
 import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved-views'
 import type { RuntimeSnapshot } from '~/server/runtime'
+import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
 const selectClass =
   'h-7 rounded-md border bg-background px-2 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -35,6 +37,7 @@ export function InboxContent({
   provider,
   refresh,
   refreshing,
+  onSavedViewSelected,
 }: {
   readonly snapshot: RuntimeSnapshot
   readonly view: ViewRef
@@ -43,6 +46,11 @@ export function InboxContent({
   readonly provider: ProviderWriteContract
   readonly refresh: () => Promise<void>
   readonly refreshing: boolean
+  readonly onSavedViewSelected?: (selection: {
+    view: string
+    mode?: ViewMode
+    query?: string
+  }) => void
 }) {
   const [filters, setFilters] = useState<InboxFilters>({})
   const [sort, setSort] = useState<InboxSort>('updated')
@@ -52,6 +60,7 @@ export function InboxContent({
   const [detailError, setDetailError] = useState<string>()
   const [creating, setCreating] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<number>()
+  const [discussionMatches, setDiscussionMatches] = useState<readonly ProviderDiscussionMatch[]>([])
   const updateFilter = <K extends keyof InboxFilters>(key: K, value: InboxFilters[K]) =>
     setFilters((current) => {
       const next = { ...current }
@@ -69,6 +78,7 @@ export function InboxContent({
     if (activeSavedView) {
       setFilters({
         ...(activeSavedView.projectIds ? { projectIds: activeSavedView.projectIds } : {}),
+        ...(activeSavedView.groupPaths ? { groupPaths: activeSavedView.groupPaths } : {}),
         ...(activeSavedView.author ? { author: activeSavedView.author } : {}),
         ...(activeSavedView.assignee ? { assignee: activeSavedView.assignee } : {}),
         ...(activeSavedView.labels ? { labels: activeSavedView.labels } : {}),
@@ -81,8 +91,30 @@ export function InboxContent({
       })
       setSort(activeSavedView.sort ?? 'updated')
       setGroup(activeSavedView.groupBy ?? 'project')
+      onSavedViewSelected?.({
+        view: `saved:${activeSavedView.id}`,
+        ...(activeSavedView.mode ? { mode: activeSavedView.mode } : {}),
+        ...(activeSavedView.query ? { query: activeSavedView.query } : {}),
+      })
     }
-  }, [activeSavedView, view])
+  }, [activeSavedView?.id, view._tag])
+  useEffect(() => {
+    let active = true
+    if (!query.trim()) {
+      setDiscussionMatches([])
+      return
+    }
+    void searchRuntimeDiscussions({ data: { query } })
+      .then((matches) => {
+        if (active) setDiscussionMatches(matches)
+      })
+      .catch(() => {
+        if (active) setDiscussionMatches([])
+      })
+    return () => {
+      active = false
+    }
+  }, [query])
 
   const projectById = useMemo(
     () => new Map(snapshot.projects.map((project) => [project.id, project])),
@@ -103,11 +135,23 @@ export function InboxContent({
       issues = issues.filter((issue) => issue.state === 'opened')
     return issues
   }, [projectById, snapshot, view])
-  const issues = useMemo(
-    () =>
-      sortIssues(filterIssues(searchIssues(available, query, snapshot.projects), filters), sort),
-    [available, filters, query, snapshot.projects, sort],
-  )
+  const issues = useMemo(() => {
+    const found = searchIssues(available, query, snapshot.projects)
+    const discussionKeys = new Set(
+      discussionMatches.map((match) => `${match.projectId}:${match.iid}`),
+    )
+    const searched = query.trim()
+      ? [
+          ...new Map(
+            [
+              ...found,
+              ...available.filter((issue) => discussionKeys.has(`${issue.projectId}:${issue.iid}`)),
+            ].map((issue) => [issue.id, issue]),
+          ).values(),
+        ]
+      : found
+    return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
+  }, [available, discussionMatches, filters, query, snapshot.projects, sort])
   const grouped = useMemo(() => groupIssues(issues, group), [group, issues])
   const labels = [...new Set(snapshot.issues.flatMap((issue) => issue.labels))].filter(
     (label) => !label.startsWith('horizon::'),
@@ -116,14 +160,7 @@ export function InboxContent({
   const assignees = [
     ...new Set(snapshot.issues.flatMap((issue) => issue.assignees.map((user) => user.username))),
   ]
-  const users = [
-    ...new Map(
-      snapshot.issues
-        .flatMap((issue) => [issue.author, ...issue.assignees])
-        .filter((user) => user !== undefined)
-        .map((user) => [user.id, user]),
-    ).values(),
-  ]
+  const users = snapshot.users
 
   const openIssue = async (issue: ProviderIssue) => {
     setSelected(issue)
@@ -148,6 +185,15 @@ export function InboxContent({
           options={snapshot.projects.map((project) => ({
             value: String(project.id),
             label: `${project.namespace}/${project.path}`,
+          }))}
+        />
+        <FilterSelect
+          label="Filtrar por grupo"
+          value={filters.groupPaths?.[0] ?? ''}
+          onChange={(value) => updateFilter('groupPaths', value ? [value] : undefined)}
+          options={snapshot.groups.map((group) => ({
+            value: group.fullPath,
+            label: group.fullPath,
           }))}
         />
         <FilterSelect
@@ -216,10 +262,11 @@ export function InboxContent({
           onClick={() => {
             const name = globalThis.prompt?.('Nome da View')?.trim()
             if (!name) return
+            const id = globalThis.crypto.randomUUID()
             persistSavedViews([
               ...readSavedViews(),
               {
-                id: globalThis.crypto.randomUUID(),
+                id,
                 name,
                 scope: scopeKey,
                 mode,
@@ -229,6 +276,7 @@ export function InboxContent({
                 ...filters,
               },
             ])
+            onSavedViewSelected?.({ view: `saved:${id}`, mode, ...(query ? { query } : {}) })
           }}
         >
           Salvar View
@@ -253,11 +301,12 @@ export function InboxContent({
             <Button
               size="xs"
               variant="ghost"
-              onClick={() =>
+              onClick={() => {
                 persistSavedViews(
                   readSavedViews().filter((savedView) => savedView.id !== activeSavedView.id),
                 )
-              }
+                onSavedViewSelected?.({ view: 'inbox' })
+              }}
             >
               Excluir
             </Button>
@@ -338,6 +387,10 @@ export function InboxContent({
                 key={createProjectId}
                 projectId={createProjectId}
                 provider={provider}
+                users={snapshot.users}
+                availableLabels={snapshot.labels
+                  .map((label) => label.name)
+                  .filter((label) => !label.startsWith('horizon::'))}
                 onCreated={(issue) => {
                   setCreating(false)
                   void openIssue(issue)

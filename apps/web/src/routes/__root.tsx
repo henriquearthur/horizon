@@ -1,5 +1,12 @@
 import { builtinViews, savedViewRef, viewRefToParam } from '@horizon/domain'
-import { createRootRoute, HeadContent, Outlet, Scripts, useNavigate } from '@tanstack/react-router'
+import {
+  createRootRoute,
+  HeadContent,
+  Outlet,
+  Scripts,
+  useNavigate,
+  useRouterState,
+} from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
@@ -42,12 +49,21 @@ function RootComponent() {
     <RootDocument>
       <ThemeProvider>
         <HorizonRuntimeProvider>
-          <AppShell>
-            <Outlet />
-          </AppShell>
+          <RoutedApplication />
         </HorizonRuntimeProvider>
       </ThemeProvider>
     </RootDocument>
+  )
+}
+
+function RoutedApplication() {
+  const setup = useRouterState({ select: (state) => state.location.pathname === '/setup' })
+  return setup ? (
+    <Outlet />
+  ) : (
+    <AppShell>
+      <Outlet />
+    </AppShell>
   )
 }
 

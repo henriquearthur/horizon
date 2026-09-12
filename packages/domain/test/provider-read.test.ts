@@ -81,4 +81,20 @@ describe('GitLabReadProvider', () => {
     ).rejects.toThrow('503')
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
+
+  it('searches discussion notes only in the scoped project ids', async () => {
+    const fetcher = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(JSON.stringify([{ noteable_iid: 42 }]))),
+    )
+    const provider = new GitLabReadProvider({ url: 'https://gitlab.example', token: 'x' }, fetcher)
+
+    await expect(provider.searchDiscussions('timeout', [7])).resolves.toEqual([
+      { projectId: 7, iid: 42 },
+    ])
+    expect(fetcher).toHaveBeenCalledOnce()
+    const url = new URL(fetcher.mock.calls[0]![0].toString())
+    expect(url.pathname).toBe('/api/v4/projects/7/search')
+    expect(url.searchParams.get('scope')).toBe('notes')
+    expect(url.searchParams.get('search')).toBe('timeout')
+  })
 })
