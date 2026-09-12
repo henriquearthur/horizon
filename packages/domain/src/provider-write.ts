@@ -1,5 +1,6 @@
 import type { ProviderConnection, ProviderUser } from './provider.ts'
 import type { ProviderIssue } from './provider-read.ts'
+import type { IssuePriority, IssueStatus } from './properties.ts'
 
 export interface ProviderComment {
   readonly id: number
@@ -31,6 +32,7 @@ export interface ProviderWriteContract {
   updateIssue(projectId: number, iid: number, input: UpdateIssueInput): Promise<ProviderIssue>
   createComment(projectId: number, iid: number, body: string): Promise<ProviderComment>
   setIssueState(projectId: number, iid: number, state: 'opened' | 'closed'): Promise<ProviderIssue>
+  updateIssueProperties(projectId: number, iid: number, changes: { status?: IssueStatus; priority?: IssuePriority }): Promise<ProviderIssue>
 }
 
 export class ProviderWriteError extends Error {
@@ -99,6 +101,13 @@ export class GitLabWriteProvider implements ProviderWriteContract {
   updateIssue(projectId: number, iid: number, input: UpdateIssueInput) { return this.#request(`projects/${projectId}/issues/${iid}`, { method: 'PUT', body: JSON.stringify(this.#fields(input)) }).then(value => asIssue(value, projectId)) }
   createComment(projectId: number, iid: number, body: string) { return this.#request(`projects/${projectId}/issues/${iid}/notes`, { method: 'POST', body: JSON.stringify({ body }) }).then(asComment) }
   setIssueState(projectId: number, iid: number, state: 'opened' | 'closed') { return this.#request(`projects/${projectId}/issues/${iid}`, { method: 'PUT', body: JSON.stringify({ state_event: state === 'closed' ? 'close' : 'reopen' }) }).then(value => asIssue(value, projectId)) }
+  async updateIssueProperties(projectId: number, iid: number, changes: { status?: IssueStatus; priority?: IssuePriority }) {
+    const { writeIssueProperties, stateForStatus } = await import('./properties.ts')
+    const issue = await this.readIssue(projectId, iid)
+    const labels = writeIssueProperties(issue.labels, changes)
+    const updated = await this.updateIssue(projectId, iid, { labels })
+    return changes.status ? this.setIssueState(projectId, iid, stateForStatus(changes.status)) : updated
+  }
 
   #fields(input: Omit<CreateIssueInput, 'projectId'> | UpdateIssueInput): Record<string, unknown> {
     return { ...('title' in input ? { title: input.title } : {}), ...('description' in input ? { description: input.description ?? '' } : {}), ...('assigneeIds' in input ? { assignee_ids: input.assigneeIds ?? [] } : {}), ...('labels' in input ? { labels: (input.labels ?? []).join(',') } : {}) }

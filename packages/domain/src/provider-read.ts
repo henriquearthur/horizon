@@ -7,6 +7,7 @@ export interface ProviderIssue {
   readonly id: number; readonly iid: number; readonly projectId: number; readonly title: string
   readonly description?: string; readonly state: 'opened' | 'closed'; readonly webUrl: string
   readonly author?: ProviderUser; readonly assignees: readonly ProviderUser[]; readonly labels: readonly string[]
+  readonly status?: string; readonly priority?: string
 }
 export interface ProviderReadPage<T> { readonly items: readonly T[]; readonly nextPage?: number }
 export interface ProviderReadContract {
