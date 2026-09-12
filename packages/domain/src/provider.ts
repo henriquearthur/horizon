@@ -112,6 +112,7 @@ export class GitLabProvider implements Provider {
     try {
       response = await this.#fetch(url, {
         headers: { 'PRIVATE-TOKEN': this.#token, Accept: 'application/json' },
+        signal: AbortSignal.timeout(15_000),
       })
     } catch (error) {
       throw new ProviderError('Não foi possível conectar ao GitLab.', {
