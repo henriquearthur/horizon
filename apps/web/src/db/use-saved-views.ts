@@ -10,7 +10,12 @@ const readSavedViews = (): readonly SavedView[] => {
     const value: unknown = JSON.parse(raw)
     return Array.isArray(value)
       ? value.filter((item): item is SavedView =>
-          Boolean(item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string' && typeof (item as { name?: unknown }).name === 'string'),
+          Boolean(
+            item &&
+            typeof item === 'object' &&
+            typeof (item as { id?: unknown }).id === 'string' &&
+            typeof (item as { name?: unknown }).name === 'string',
+          ),
         )
       : []
   } catch {
