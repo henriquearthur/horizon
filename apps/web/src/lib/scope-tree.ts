@@ -35,9 +35,9 @@ export const buildScopeTree = (
   const projectCountByGroup = new Map<string, number>()
   for (const project of projects) {
     const owner = ownerOf(project.groupPath ?? project.namespace)
-    if (owner === undefined) continue
+    const target = owner ?? `__standalone__`
     const count = issuesByProject.get(project.id) ?? 0
-    projectsByGroup.set(owner, [
+    projectsByGroup.set(target, [
       ...(projectsByGroup.get(owner) ?? []),
       {
         viewParam: viewRefToParam(projectViewRef(`${project.namespace}/${project.path}`)),
@@ -45,7 +45,7 @@ export const buildScopeTree = (
         count: String(count),
       },
     ])
-    projectCountByGroup.set(owner, (projectCountByGroup.get(owner) ?? 0) + count)
+    projectCountByGroup.set(target, (projectCountByGroup.get(target) ?? 0) + count)
   }
 
   const childrenOf = (path: string | undefined): readonly SidebarGroupItem[] =>

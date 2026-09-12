@@ -429,7 +429,7 @@ export function InboxContent({
       >
         <FilterMenu filters={filterDefinitions} />
 
-        {hasFilters ? (
+        {true ? (
           <>
             <Button
               variant="ghost"

@@ -82,9 +82,7 @@ const components: Components = {
     <th className="border-b px-2.5 py-1.5 text-left font-semibold">{children}</th>
   ),
   td: ({ children }) => <td className="border-b px-2.5 py-1.5 last:border-0">{children}</td>,
-  img: ({ src, alt }) => (
-    <img src={typeof src === 'string' ? src : undefined} alt={alt} className="my-2 rounded-lg" />
-  ),
+  img: () => null,
 }
 
 export function Markdown({
