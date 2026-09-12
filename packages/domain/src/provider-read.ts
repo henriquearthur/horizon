@@ -1,5 +1,6 @@
 import type { ScopeSelection } from './scope.ts'
 import type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
+export type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
 
 export interface ProviderLabel { readonly id: number; readonly name: string; readonly color?: string }
 export interface ProviderIssue {
