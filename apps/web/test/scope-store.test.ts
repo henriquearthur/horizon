@@ -20,7 +20,7 @@ describe('ScopeStore', () => {
     await new ScopeStore(fileOf()).saveScope({
       groups: ['infra', 'infra'],
       projects: [10, 10, -1],
-      followGroups: ['infra', 'fora-do-escopo'],
+      followGroups: [],
     })
 
     await expect(new ScopeStore(fileOf()).getScope()).resolves.toEqual({

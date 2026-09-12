@@ -32,6 +32,10 @@ export class RuntimeService {
     return this.writeProvider().readIssue(projectId, iid)
   }
 
+  listMergeRequests(projectId: number, iid: number) {
+    return this.writeProvider().listMergeRequests?.(projectId, iid) ?? Promise.resolve([])
+  }
+
   listComments(projectId: number, iid: number) {
     return this.writeProvider().listComments(projectId, iid)
   }

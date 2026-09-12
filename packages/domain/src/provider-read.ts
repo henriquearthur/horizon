@@ -19,6 +19,7 @@ export interface ProviderIssue {
   readonly assignees: readonly ProviderUser[]
   readonly labels: readonly string[]
   readonly createdAt?: string
+  readonly closedAt?: string
   readonly updatedAt?: string
   readonly status?: string
   readonly priority?: string
@@ -199,6 +200,7 @@ export class GitLabReadProvider implements ProviderReadContract {
               : [],
             ...(typeof v.created_at === 'string' ? { createdAt: v.created_at } : {}),
             ...(typeof v.updated_at === 'string' ? { updatedAt: v.updated_at } : {}),
+            ...(typeof v.closed_at === 'string' ? { closedAt: v.closed_at } : {}),
             ...(typeof v.merge_requests_count === 'number'
               ? { mergeRequestCount: v.merge_requests_count }
               : {}),
@@ -231,7 +233,7 @@ export class GitLabReadProvider implements ProviderReadContract {
         ...r.items.filter(
           (x) =>
             scope.projects.includes(x.id) ||
-            scope.followGroups.some((g) => x.groupPath === g || x.groupPath?.startsWith(`${g}/`)),
+            scope.groups.some((g) => x.groupPath === g || x.groupPath?.startsWith(`${g}/`)),
         ),
       )
       if (!r.nextPage) break

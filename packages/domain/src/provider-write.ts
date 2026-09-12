@@ -1,8 +1,16 @@
-import { GitLabHttp, GitLabHttpError, type GitLabHttpOptions } from './http.ts'
+import { GitLabHttp, GitLabHttpError, nextPageOf, type GitLabHttpOptions } from './http.ts'
 import type { ProviderConnection, ProviderUser } from './provider.ts'
 import type { ProviderIssue } from './provider-read.ts'
 import { stateForStatus, writeIssueProperties } from './properties.ts'
 import type { IssuePriority, IssueStatus } from './properties.ts'
+
+export interface ProviderMergeRequest {
+  readonly id: number
+  readonly iid: number
+  readonly title: string
+  readonly state: string
+  readonly webUrl: string
+}
 
 export interface ProviderComment {
   readonly id: number
@@ -30,6 +38,7 @@ export interface UpdateIssueInput {
 
 export interface ProviderWriteContract {
   readIssue(projectId: number, iid: number): Promise<ProviderIssue>
+  listMergeRequests?(projectId: number, iid: number): Promise<readonly ProviderMergeRequest[]>
   listComments(projectId: number, iid: number): Promise<readonly ProviderComment[]>
   createIssue(input: CreateIssueInput): Promise<ProviderIssue>
   updateIssue(projectId: number, iid: number, input: UpdateIssueInput): Promise<ProviderIssue>
@@ -104,6 +113,7 @@ const asIssue = (input: unknown, projectId: number): ProviderIssue => {
       : [],
     ...(typeof value.created_at === 'string' ? { createdAt: value.created_at } : {}),
     ...(typeof value.updated_at === 'string' ? { updatedAt: value.updated_at } : {}),
+    ...(typeof value.closed_at === 'string' ? { closedAt: value.closed_at } : {}),
     ...(typeof value.merge_requests_count === 'number'
       ? { mergeRequestCount: value.merge_requests_count }
       : {}),
@@ -157,6 +167,21 @@ export class GitLabWriteProvider implements ProviderWriteContract {
     return this.#request(`projects/${projectId}/issues/${iid}`).then((value) =>
       asIssue(value, projectId),
     )
+  }
+  async listMergeRequests(projectId: number, iid: number): Promise<readonly ProviderMergeRequest[]> {
+    const items: ProviderMergeRequest[] = []
+    let page: number | undefined = 1
+    while (page !== undefined) {
+      const result = await this.#http.json<unknown>(this.#http.url(`projects/${projectId}/issues/${iid}/related_merge_requests`, page))
+      if (!Array.isArray(result.value)) throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+      for (const value of result.value) {
+        if (typeof value?.id !== 'number' || typeof value.iid !== 'number' || typeof value.title !== 'string' || typeof value.state !== 'string' || typeof value.web_url !== 'string')
+          throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+        items.push({ id: value.id, iid: value.iid, title: value.title, state: value.state, webUrl: value.web_url })
+      }
+      page = nextPageOf(result.response)
+    }
+    return items
   }
   listComments(projectId: number, iid: number) {
     return this.#request(

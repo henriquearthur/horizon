@@ -22,7 +22,7 @@ describe('Escopo', () => {
   })
 
   it('includes projects created below a followed group', () => {
-    const selection = normalizeScopeSelection({ groups: ['platform'], followGroups: ['platform'] })
+    const selection = normalizeScopeSelection({ groups: ['platform'], followGroups: [] })
     expect(
       selectedProjects([project(1, 'platform/tools'), project(2, 'other')], selection).map(
         (item) => item.id,

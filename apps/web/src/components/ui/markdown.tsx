@@ -34,17 +34,35 @@ const components: Components = {
   strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   del: ({ children }) => <del className="text-muted-foreground">{children}</del>,
-  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+  ul: ({ children, className }) => (
+    <ul
+      className={cn(
+        'my-2 list-disc space-y-1 pl-5',
+        className?.includes('contains-task-list') && 'list-none pl-0',
+        className,
+      )}
+    >
+      {children}
+    </ul>
+  ),
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
   li: ({ children, className }) => (
-    <li className={cn('marker:text-muted-foreground', className)}>{children}</li>
+    <li
+      className={cn(
+        'marker:text-muted-foreground',
+        className?.includes('task-list-item') && 'list-none',
+        className,
+      )}
+    >
+      {children}
+    </li>
   ),
   input: ({ checked, type }) =>
     type === 'checkbox' ? (
       <span
         aria-hidden
         className={cn(
-          'mr-1.5 -ml-5 inline-flex size-3.5 translate-y-0.5 items-center justify-center rounded-[4px] border align-text-top text-[9px] leading-none',
+          'mr-1.5 inline-flex size-3.5 translate-y-0.5 items-center justify-center rounded-[4px] border align-text-top text-[9px] leading-none',
           checked
             ? 'border-primary bg-primary text-primary-foreground'
             : 'border-input text-transparent',

@@ -6,6 +6,7 @@ import {
   createRuntimeIssue,
   getIssue,
   getIssueComments,
+  getIssueMergeRequests,
   getRuntimeSnapshot,
   setRuntimeIssueState,
   updateRuntimeIssue,
@@ -158,6 +159,7 @@ export function HorizonRuntimeProvider({
   const provider = useMemo<ProviderWriteContract>(
     () => ({
       readIssue: (projectId, iid) => getIssue({ data: { projectId, iid } }),
+      listMergeRequests: (projectId, iid) => getIssueMergeRequests({ data: { projectId, iid } }),
       listComments: (projectId, iid) => getIssueComments({ data: { projectId, iid } }),
       createIssue: async (input) => {
         const issue = await createRuntimeIssue({ data: input })

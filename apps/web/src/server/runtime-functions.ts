@@ -134,3 +134,7 @@ export const updateRuntimeIssueProperties = createServerFn({ method: 'POST' })
     },
   )
   .handler(({ data }) => runtime.updateIssueProperties(data.projectId, data.iid, data.changes))
+
+export const getIssueMergeRequests = createServerFn({ method: 'GET' })
+  .validator(issueRef)
+  .handler(({ data }) => runtime.listMergeRequests(data.projectId, data.iid))
