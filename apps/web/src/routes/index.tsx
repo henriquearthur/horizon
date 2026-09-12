@@ -1,11 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { ContentHeader } from '~/components/shell/content-header'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { resolveShellSearch } from '~/lib/search'
 import { activeViewHeading } from '~/lib/view-heading'
+import { getConnection } from '~/server/onboarding-functions'
 
 export const Route = createFileRoute('/')({
+  beforeLoad: async () => {
+    if (!(await getConnection())) throw redirect({ to: '/setup' })
+  },
   component: IssuesPage,
 })
 
