@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest'
+import { filterIssues, groupIssues, sortIssues, type ProviderIssue } from '../src/index.ts'
+
+const issue = (id: number, labels: readonly string[]): ProviderIssue => ({
+  id,
+  iid: id,
+  projectId: 1,
+  title: `Issue ${id}`,
+  state: 'opened',
+  webUrl: `https://gitlab.example/issues/${id}`,
+  assignees: [],
+  labels,
+})
+
+describe('Inbox grouping', () => {
+  it('groups structured Horizon properties including their defaults and conflicts', () => {
+    const issues = [
+      issue(1, []),
+      issue(2, ['horizon::status::Em andamento', 'horizon::priority::P1 urgente']),
+      issue(3, ['horizon::status::Backlog', 'horizon::status::Concluído']),
+    ]
+
+    expect([...groupIssues(issues, 'status').keys()]).toEqual([
+      'Backlog',
+      'Em andamento',
+      'Conflito',
+    ])
+    expect([...groupIssues(issues, 'priority').keys()]).toEqual(['Sem prioridade', 'P1 urgente'])
+  })
+
+  it('filters by group path and sorts by Provider timestamps', () => {
+    const older = {
+      ...issue(99, []),
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-03T00:00:00Z',
+    }
+    const newer = {
+      ...issue(1, []),
+      projectId: 2,
+      createdAt: '2026-01-02T00:00:00Z',
+      updatedAt: '2026-01-04T00:00:00Z',
+    }
+    const projects = [
+      { id: 1, path: 'a', name: 'A', namespace: 'infra', groupPath: 'infra', webUrl: '#' },
+      { id: 2, path: 'b', name: 'B', namespace: 'apps', groupPath: 'apps', webUrl: '#' },
+    ]
+
+    expect(filterIssues([older, newer], { groupPaths: ['infra'] }, projects)).toEqual([older])
+    expect(sortIssues([older, newer], 'created')).toEqual([newer, older])
+    expect(sortIssues([older, newer], 'updated')).toEqual([newer, older])
+  })
+})

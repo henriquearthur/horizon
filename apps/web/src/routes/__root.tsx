@@ -1,11 +1,19 @@
 import { builtinViews, savedViewRef, viewRefToParam } from '@horizon/domain'
-import { createRootRoute, HeadContent, Outlet, Scripts, useNavigate } from '@tanstack/react-router'
+import {
+  createRootRoute,
+  HeadContent,
+  Outlet,
+  Scripts,
+  useNavigate,
+  useRouterState,
+} from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { useSavedViews } from '~/db/use-saved-views'
 import { ThemeProvider, themeBootstrapScript } from '~/lib/theme'
+import { HorizonRuntimeProvider, useHorizonRuntime } from '~/runtime/runtime-provider'
 import { resolveShellSearch, validateShellSearch } from '~/lib/search'
 import appCss from '~/styles/app.css?url'
 
@@ -40,11 +48,22 @@ function RootComponent() {
   return (
     <RootDocument>
       <ThemeProvider>
-        <AppShell>
-          <Outlet />
-        </AppShell>
+        <HorizonRuntimeProvider>
+          <RoutedApplication />
+        </HorizonRuntimeProvider>
       </ThemeProvider>
     </RootDocument>
+  )
+}
+
+function RoutedApplication() {
+  const setup = useRouterState({ select: (state) => state.location.pathname === '/setup' })
+  return setup ? (
+    <Outlet />
+  ) : (
+    <AppShell>
+      <Outlet />
+    </AppShell>
   )
 }
 
@@ -54,22 +73,38 @@ const builtinSidebarItems: readonly SidebarItem[] = builtinViews.map((view) => (
   icon: view.icon,
 }))
 
-/**
- * Groups and projects come from the Escopo of the configured Conexão
- * (issue #3); until then the sidebar shows its empty state.
- */
-const scopeGroups: readonly SidebarGroupItem[] = []
-
 function AppShell({ children }: { children: ReactNode }) {
   const { viewParam, query } = resolveShellSearch(Route.useSearch())
   const navigate = useNavigate({ from: Route.fullPath })
-  const savedViews = useSavedViews()
+  const runtime = useHorizonRuntime()
+  const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
+  const savedViews = useSavedViews(scopeKey)
+  const issueCount = (projectId: number) =>
+    String(runtime.snapshot?.issues.filter((issue) => issue.projectId === projectId).length ?? 0)
+  const scopeGroups: readonly SidebarGroupItem[] = (runtime.snapshot?.groups ?? []).map((group) => {
+    const projects = (runtime.snapshot?.projects ?? []).filter(
+      (project) =>
+        project.groupPath === group.fullPath || project.groupPath?.startsWith(`${group.fullPath}/`),
+    )
+    return {
+      path: group.fullPath,
+      count: String(projects.reduce((count, project) => count + Number(issueCount(project.id)), 0)),
+      projects: projects.map((project) => ({
+        viewParam: viewRefToParam({
+          _tag: 'Project',
+          path: `${project.namespace}/${project.path}`,
+        }),
+        label: project.path,
+        count: issueCount(project.id),
+      })),
+    }
+  })
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <AppHeader
-        connectionLabel={null}
-        userName={null}
+        connectionLabel={runtime.snapshot ? new URL(runtime.snapshot.connection.url).host : null}
+        userName={runtime.snapshot?.connection.user.name ?? null}
         query={query}
         onQueryChange={(next) =>
           navigate({
