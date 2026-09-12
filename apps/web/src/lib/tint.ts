@@ -6,7 +6,7 @@ import type { CSSProperties } from 'react'
  * a spread palette so neighbouring chips never look like the same colour.
  *
  * Hues that carry meaning elsewhere (red for P1, amber for Em andamento, green
- * for Concluído, teal for the accent) are left out of the palette, so a label
+ * for Concluído, indigo for the accent) are left out of the palette, so a label
  * can never impersonate a Status.
  */
 const CURATED_HUES: Readonly<Record<string, number>> = {
