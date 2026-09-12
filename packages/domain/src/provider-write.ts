@@ -104,6 +104,10 @@ const asIssue = (input: unknown, projectId: number): ProviderIssue => {
       : [],
     ...(typeof value.created_at === 'string' ? { createdAt: value.created_at } : {}),
     ...(typeof value.updated_at === 'string' ? { updatedAt: value.updated_at } : {}),
+    ...(typeof value.merge_requests_count === 'number'
+      ? { mergeRequestCount: value.merge_requests_count }
+      : {}),
+    ...(typeof value.user_notes_count === 'number' ? { commentCount: value.user_notes_count } : {}),
   }
 }
 

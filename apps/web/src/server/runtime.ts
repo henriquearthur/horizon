@@ -56,8 +56,10 @@ export class RuntimeService {
     return this.written(() => this.writeProvider().updateIssue(projectId, iid, input))
   }
 
-  createComment(projectId: number, iid: number, body: string) {
-    return this.writeProvider().createComment(projectId, iid, body)
+  async createComment(projectId: number, iid: number, body: string) {
+    const comment = await this.writeProvider().createComment(projectId, iid, body)
+    invalidateIssues()
+    return comment
   }
 
   async setIssueState(

@@ -1,27 +1,20 @@
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { ContentHeader } from '~/components/shell/content-header'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { InboxContent } from '~/components/inbox/inbox-content'
 import { Button } from '~/components/ui/button'
+import { Skeleton } from '~/components/ui/skeleton'
 import { resolveShellSearch } from '~/lib/search'
 import { activeViewHeading } from '~/lib/view-heading'
 import { getSetupStatus } from '~/server/setup-functions'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
 export const Route = createFileRoute('/')({
-  /**
-   * Only a deployment that cannot work at all sends the user to `/setup`: a
-   * GitLab that is momentarily unreachable is reported inside the Inbox, so the
-   * shell never bounces between the two screens.
-   */
-  loader: async () => {
+  beforeLoad: async () => {
     const status = await getSetupStatus()
-    if (!status.configured || status.scopeEmpty) throw redirect({ to: '/setup' })
-    return status
+    if (!status.reachable || status.scopeEmpty) throw redirect({ to: '/setup' })
   },
-  // The Escopo changes from `/setup`, which invalidates the router itself.
-  staleTime: 5 * 60_000,
   component: IssuesPage,
 })
 
@@ -31,72 +24,61 @@ function IssuesPage() {
   const runtime = useHorizonRuntime()
   const navigate = useNavigate({ from: '/' })
 
-  if (runtime.loading)
-    return (
-      <section className="flex min-w-0 flex-1 flex-col">
-        <ContentHeader title={heading.title} subtitle={heading.subtitle} mode={mode} />
-        <ContentToolbar />
-        <div className="flex-1 overflow-y-auto" aria-busy="true">
-          <EmptyState>Carregando issues do Escopo…</EmptyState>
-        </div>
-      </section>
-    )
-
-  if (!runtime.snapshot)
-    return (
-      <section className="flex min-w-0 flex-1 flex-col">
-        <ContentHeader title={heading.title} subtitle={heading.subtitle} mode={mode} />
-        <ContentToolbar>
-          <Button size="xs" variant="outline" onClick={() => void runtime.refresh({ force: true })}>
-            Tentar novamente
-          </Button>
-        </ContentToolbar>
-        <div className="flex-1 overflow-y-auto">
-          <EmptyState>
-            {runtime.error ?? 'Não foi possível abrir a Inbox.'}
-            <Link to="/setup" className="ml-2 underline">
-              Rever configuração
-            </Link>
-          </EmptyState>
-        </div>
-      </section>
-    )
-
   return (
     <section className="flex min-w-0 flex-1 flex-col">
       <ContentHeader title={heading.title} subtitle={heading.subtitle} mode={mode} />
-      {/* A failed refresh keeps the last good Inbox on screen. */}
-      {runtime.error ? (
-        <p
-          role="alert"
-          className="flex items-center gap-3 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive"
-        >
-          {runtime.error}
-          <Button size="xs" variant="outline" onClick={() => void runtime.refresh({ force: true })}>
-            Tentar novamente
-          </Button>
-        </p>
-      ) : null}
-      <InboxContent
-        snapshot={runtime.snapshot}
-        view={view}
-        mode={mode}
-        query={query}
-        provider={runtime.provider}
-        refresh={() => runtime.refresh({ force: true })}
-        refreshing={runtime.refreshing}
-        onSavedViewSelected={(selection) =>
-          navigate({
-            search: (previous) => ({
-              ...previous,
-              view: selection.view,
-              mode: selection.mode,
-              q: selection.query,
-            }),
-            replace: true,
-          })
-        }
-      />
+      {runtime.loading ? (
+        <>
+          <ContentToolbar />
+          <div className="flex-1 overflow-y-auto px-2 pt-2" aria-busy="true">
+            <span className="sr-only">Carregando issues do Escopo…</span>
+            {Array.from({ length: 7 }, (_, row) => (
+              <div key={row} className="flex items-start gap-3 rounded-xl px-3.5 py-2.5">
+                <Skeleton className="mt-1.5 size-[7px] rounded-full" />
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <Skeleton
+                    className="h-3.5 rounded-full"
+                    style={{ width: `${52 + ((row * 13) % 34)}%` }}
+                  />
+                  <Skeleton className="h-2.5 w-40 rounded-full" />
+                </div>
+                <Skeleton className="size-[21px] rounded-full" />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : runtime.error || !runtime.snapshot ? (
+        <>
+          <ContentToolbar>
+            <Button size="xs" variant="outline" onClick={() => void runtime.refresh()}>
+              Tentar novamente
+            </Button>
+          </ContentToolbar>
+          <div className="flex-1 overflow-y-auto">
+            <EmptyState>{runtime.error ?? 'Não foi possível abrir a Inbox.'}</EmptyState>
+          </div>
+        </>
+      ) : (
+        <InboxContent
+          snapshot={runtime.snapshot}
+          view={view}
+          mode={mode}
+          query={query}
+          provider={runtime.provider}
+          refresh={runtime.refresh}
+          refreshing={runtime.refreshing}
+          onSavedViewSelected={(selection) =>
+            navigate({
+              search: (previous) => ({
+                ...previous,
+                view: selection.view,
+                mode: selection.mode,
+                q: selection.query,
+              }),
+            })
+          }
+        />
+      )}
     </section>
   )
 }

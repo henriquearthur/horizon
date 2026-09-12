@@ -121,8 +121,11 @@ export interface ProviderSnapshot {
   readonly labels: readonly ProviderLabel[]
 }
 
+let scopeGeneration = 0
+
 /** One consistent read of everything the shell needs, cached per TTL. */
 export const providerSnapshot = async (force = false): Promise<ProviderSnapshot> => {
+  const generation = scopeGeneration
   const started = Date.now()
   const connection = credentials()
   const [user, catalog, scope] = await Promise.all([
@@ -139,6 +142,7 @@ export const providerSnapshot = async (force = false): Promise<ProviderSnapshot>
       return { users: [], labels: [], projectIds: [] } satisfies ProjectMetadata
     }),
   ])
+  if (generation !== scopeGeneration) return providerSnapshot()
   log('gitlab.snapshot', { issues: issues.length, durationMs: Date.now() - started, force })
   return {
     connection: { url: connection.url, user },
@@ -162,6 +166,7 @@ export const invalidateIssues = (): void => issuesCache.invalidate()
 
 /** Drop every read that depends on which projects are in the Escopo. */
 export const invalidateScopedReads = (): void => {
+  scopeGeneration += 1
   issuesCache.invalidate()
   metadataCache.invalidate()
 }

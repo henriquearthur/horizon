@@ -9,10 +9,11 @@ import {
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
-import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
+import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { EmptyState } from '~/components/shell/empty-state'
 import { useSavedViews } from '~/db/use-saved-views'
 import { ThemeProvider, themeBootstrapScript } from '~/lib/theme'
+import { buildScopeTree } from '~/lib/scope-tree'
 import { HorizonRuntimeProvider, useHorizonRuntime } from '~/runtime/runtime-provider'
 import { resolveShellSearch, validateShellSearch } from '~/lib/search'
 import appCss from '~/styles/app.css?url'
@@ -30,7 +31,7 @@ export const Route = createRootRoute({
       { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap',
       },
       { rel: 'stylesheet', href: appCss },
       { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
@@ -79,32 +80,18 @@ function AppShell({ children }: { children: ReactNode }) {
   const runtime = useHorizonRuntime()
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
-  const issueCount = (projectId: number) =>
-    String(runtime.snapshot?.issues.filter((issue) => issue.projectId === projectId).length ?? 0)
-  const scopeGroups: readonly SidebarGroupItem[] = (runtime.snapshot?.groups ?? []).map((group) => {
-    const projects = (runtime.snapshot?.projects ?? []).filter(
-      (project) =>
-        project.groupPath === group.fullPath || project.groupPath?.startsWith(`${group.fullPath}/`),
-    )
-    return {
-      path: group.fullPath,
-      count: String(projects.reduce((count, project) => count + Number(issueCount(project.id)), 0)),
-      projects: projects.map((project) => ({
-        viewParam: viewRefToParam({
-          _tag: 'Project',
-          path: `${project.namespace}/${project.path}`,
-        }),
-        label: project.path,
-        count: issueCount(project.id),
-      })),
-    }
-  })
+  const scopeTree = buildScopeTree(
+    runtime.snapshot?.groups ?? [],
+    runtime.snapshot?.projects ?? [],
+    runtime.snapshot?.issues ?? [],
+  )
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <AppHeader
         connectionLabel={runtime.snapshot ? new URL(runtime.snapshot.connection.url).host : null}
         userName={runtime.snapshot?.connection.user.name ?? null}
+        userAvatarUrl={runtime.snapshot?.connection.user.avatarUrl}
         query={query}
         onQueryChange={(next) =>
           navigate({
@@ -145,7 +132,8 @@ function AppShell({ children }: { children: ReactNode }) {
             label: savedView.name,
             icon: '◆',
           }))}
-          groups={scopeGroups}
+          groups={scopeTree.groups}
+          standaloneProjects={scopeTree.standaloneProjects}
         />
         {children}
       </div>

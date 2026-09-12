@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { builtinViews } from '@horizon/domain'
 import { describe, expect, it } from 'vitest'
 import { AppSidebar, type SidebarGroupItem, type SidebarItem } from '~/components/shell/app-sidebar'
+import { buildScopeTree } from '~/lib/scope-tree'
 import { renderWithRouter } from './router-harness'
 
 const builtinItems: readonly SidebarItem[] = builtinViews.map((view) => ({
@@ -14,7 +15,19 @@ const builtinItems: readonly SidebarItem[] = builtinViews.map((view) => ({
 const groups: readonly SidebarGroupItem[] = [
   {
     path: 'infra',
+    label: 'infra',
+    viewParam: 'group:infra',
     count: '3',
+    groups: [
+      {
+        path: 'infra/edge',
+        label: 'edge',
+        viewParam: 'group:infra/edge',
+        count: '1',
+        groups: [],
+        projects: [{ viewParam: 'project:infra/edge/cdn', label: 'cdn', count: '1' }],
+      },
+    ],
     projects: [
       { viewParam: 'project:infra/terraform-aws', label: 'terraform-aws', count: '2' },
       { viewParam: 'project:infra/k8s-clusters', label: 'k8s-clusters', count: '1' },
@@ -83,6 +96,34 @@ describe('AppSidebar', () => {
     expect(screen.getByText('Selecione um Escopo para ver grupos e projetos.')).toBeInTheDocument()
   })
 
+  it('shows standalone projects as navigable project rows', async () => {
+    const tree = buildScopeTree(
+      [],
+      [
+        {
+          id: 7,
+          path: 'horizon',
+          name: 'Horizon',
+          namespace: 'henrique',
+          webUrl: 'https://gitlab.example.com/henrique/horizon',
+        },
+      ],
+      [{ id: 11, iid: 1, projectId: 7, title: 'Issue', state: 'opened', webUrl: '#', assignees: [], labels: [] }],
+    )
+
+    await renderSidebar({
+      groups: tree.groups,
+      standaloneProjects: tree.standaloneProjects,
+    })
+
+    expect(screen.getByRole('link', { name: /horizon/ })).toHaveAttribute(
+      'href',
+      '/?view=project%3Ahenrique%2Fhorizon',
+    )
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.queryByText('Selecione um Escopo para ver grupos e projetos.')).not.toBeInTheDocument()
+  })
+
   it('shows groups with their projects and counts, and collapses them', async () => {
     await renderSidebar({ groups })
     expect(screen.getByText('infra/')).toBeInTheDocument()
@@ -92,8 +133,24 @@ describe('AppSidebar', () => {
     )
     expect(screen.getByText('2')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /infra/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Recolher infra' }))
 
     expect(screen.queryByRole('link', { name: /terraform-aws/ })).not.toBeInTheDocument()
+  })
+
+  it('navigates to a group View when the group name is clicked', async () => {
+    await renderSidebar({ groups })
+    expect(screen.getByRole('link', { name: /infra\// })).toHaveAttribute(
+      'href',
+      '/?view=group%3Ainfra',
+    )
+  })
+
+  it('nests subgroups under their parent group', async () => {
+    await renderSidebar({ groups })
+    expect(screen.getByRole('link', { name: /edge\// })).toHaveAttribute(
+      'href',
+      '/?view=group%3Ainfra%2Fedge',
+    )
   })
 })

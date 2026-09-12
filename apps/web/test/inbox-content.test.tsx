@@ -41,6 +41,24 @@ const snapshot: RuntimeSnapshot = {
 describe('InboxContent', () => {
   beforeEach(() => localStorage.clear())
 
+  it('names timestamp sort options explicitly', async () => {
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'all' }}
+        mode="list"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /Atualização/ }))
+    expect(await screen.findByRole('menuitemradio', { name: 'Atualização' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitemradio', { name: 'Criação' })).toBeInTheDocument()
+  })
+
   it('filters scoped issues by structured status', async () => {
     render(
       <InboxContent
@@ -56,11 +74,13 @@ describe('InboxContent', () => {
 
     expect(screen.getByText('Backlog issue')).toBeInTheDocument()
     expect(screen.getByText('Done issue')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: '+ Filtro' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Status' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Concluído' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filtro' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Concluído/ }))
+
     expect(screen.queryByText('Backlog issue')).not.toBeInTheDocument()
     expect(screen.getByText('Done issue')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover filtro Status' })).toBeInTheDocument()
   })
 
   it('surfaces property conflicts and Provider errors from issue details', async () => {
@@ -88,7 +108,7 @@ describe('InboxContent', () => {
       />,
     )
 
-    expect(screen.getByText('⚠ Conflito')).toBeInTheDocument()
+    expect(screen.getByTitle('Status conflitante')).toBeInTheDocument()
     await userEvent.click(screen.getByText('Backlog issue'))
     expect(await screen.findByText('Token sem permissão.')).toHaveAttribute('role', 'alert')
   })

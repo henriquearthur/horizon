@@ -12,6 +12,8 @@ export const activeViewHeading = (view: ViewRef): ViewHeading => {
       const builtin = builtinView(view.id)
       return { title: builtin.title, subtitle: builtin.subtitle }
     }
+    case 'Group':
+      return { title: `${view.path}/`, subtitle: 'grupo e subgrupos' }
     case 'Project':
       return { title: view.path, subtitle: 'projeto' }
     case 'Saved':

@@ -169,8 +169,20 @@ export function HorizonRuntimeProvider({
         replaceIssue(issue)
         return issue
       },
-      createComment: (projectId, iid, body) =>
-        createRuntimeComment({ data: { projectId, iid, body } }),
+      createComment: async (projectId, iid, body) => {
+        const comment = await createRuntimeComment({ data: { projectId, iid, body } })
+        setSnapshot((current) => current ? {
+          ...current,
+          issues: current.issues.map((issue) => issue.projectId === projectId && issue.iid === iid
+            ? { ...issue, commentCount: (issue.commentCount ?? 0) + 1 } : issue),
+        } : current)
+        for (const issue of issueCollection.values()) {
+          if (issue.projectId === projectId && issue.iid === iid) {
+            issueCollection.update(issue.id, (draft) => { draft.commentCount = (draft.commentCount ?? 0) + 1 })
+          }
+        }
+        return comment
+      },
       setIssueState: async (projectId, iid, state) => {
         const issue = await setRuntimeIssueState({ data: { projectId, iid, state } })
         replaceIssue(issue)
