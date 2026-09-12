@@ -2,11 +2,21 @@ import { useEffect, useState } from 'react'
 import type {
   ProviderComment,
   ProviderIssue,
+  ProviderMergeRequest,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
 import { PRIORITY_VALUES, readIssueProperties, STATUS_VALUES } from '@horizon/domain'
-import { ExternalLink, GitMerge, MessageSquare, Pencil, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ExternalLink,
+  GitMerge,
+  LoaderCircle,
+  MessageSquare,
+  Pencil,
+  UserPlus,
+  X,
+} from 'lucide-react'
 import { LabelChip, PriorityBadge, StatusDot, UserAvatar } from '~/components/issue/issue-chrome'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -31,6 +41,8 @@ export function IssueDetailPanel({
   onClose,
   onUpdated,
   onCommentCreated,
+  loading = false,
+  currentUser,
   users = [],
   availableLabels = [],
 }: {
@@ -40,6 +52,8 @@ export function IssueDetailPanel({
   onClose: () => void
   onUpdated: (issue: ProviderIssue) => void
   onCommentCreated?: (comment: ProviderComment) => void
+  loading?: boolean
+  currentUser?: ProviderUser
   users?: readonly ProviderUser[]
   availableLabels?: readonly string[]
 }) {
@@ -53,16 +67,25 @@ export function IssueDetailPanel({
   )
   const [labels, setLabels] = useState<readonly string[]>(issue.labels)
   const [error, setError] = useState<string>()
+  const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
+  const discussion = comments.filter((item) => !item.system)
+  const activity = comments.filter((item) => item.system)
 
   useEffect(() => {
+    let active = true
+    setMergeRequests([])
+    void provider.listMergeRequests?.(issue.projectId, issue.iid)
+      .then((items) => { if (active) setMergeRequests(items) })
+      .catch(() => { if (active) setMergeRequests([]) })
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
     setLabels(issue.labels)
-  }, [issue])
+    return () => { active = false }
+  }, [issue, provider])
 
   const mutate = async (action: () => Promise<ProviderIssue>) => {
     setBusy(true)
@@ -104,11 +127,34 @@ export function IssueDetailPanel({
     }
   }
 
+  const assignToMe = () => {
+    if (!currentUser || assigneeIds.includes(currentUser.id)) return
+    const next = [...assigneeIds, currentUser.id]
+    void mutate(() =>
+      provider.updateIssue(issue.projectId, issue.iid, { assigneeIds: next }),
+    ).then((saved) => {
+      if (saved) setAssigneeIds(next)
+    })
+  }
+
   return (
+    <>
+    <button
+      type="button"
+      aria-label="Fechar detalhes"
+      className="fixed inset-0 z-40 cursor-default bg-foreground/8 backdrop-blur-[1px]"
+      onClick={onClose}
+    />
     <aside
       aria-label="Detalhes do issue"
-      className="animate-panel-in absolute inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
+      aria-busy={loading || busy}
+      className="animate-panel-in fixed inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
     >
+      {(loading || busy) && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-l-2xl bg-card/45">
+          <LoaderCircle className="size-5 animate-spin text-primary" aria-label="Carregando" />
+        </div>
+      )}
       <header className="flex-none border-b px-5 pt-3.5 pb-4">
         <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
           <span className="font-semibold text-primary">#{issue.iid}</span>
@@ -183,7 +229,11 @@ export function IssueDetailPanel({
               )
             }
           >
-            <SelectTrigger size="sm" aria-label="Prioridade" className="gap-2 rounded-full">
+            <SelectTrigger
+              size="sm"
+              aria-label="Prioridade"
+              className="min-w-32 gap-2 rounded-full px-3"
+            >
               <SelectValue placeholder="Corrigir conflito…">
                 <PriorityBadge
                   priority={properties.priority}
@@ -244,6 +294,19 @@ export function IssueDetailPanel({
             <span className="text-muted-foreground">Não atribuído</span>
           )}
         </DetailMeta>
+        {currentUser && !issue.assignees.some((user) => user.id === currentUser.id) ? (
+          <DetailMeta label="Ação">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={assignToMe}
+              className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-50"
+            >
+              <UserPlus aria-hidden className="size-3" />
+              Atribuir a mim
+            </button>
+          </DetailMeta>
+        ) : null}
         <DetailMeta label="Autor">
           {issue.author ? (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -260,18 +323,18 @@ export function IssueDetailPanel({
         <DetailMeta label="Criado">
           <span title={absoluteTime(issue.createdAt)}>{relativeTime(issue.createdAt) ?? '—'}</span>
         </DetailMeta>
-        {issue.mergeRequestCount ? (
+        {mergeRequests.length ? (
           <DetailMeta label="Merge requests">
             <span className="flex items-center gap-1.5 text-primary">
               <GitMerge aria-hidden className="size-3" />
-              {issue.mergeRequestCount}
+              {mergeRequests.map((mr) => <a key={mr.id} href={mr.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline">!{mr.iid} {mr.title}</a>)}
             </span>
           </DetailMeta>
         ) : null}
       </dl>
 
       <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
-        <DetailHeading>Descrição</DetailHeading>
+        <CollapsibleSection title="Descrição">
         {editing ? (
           <div className="mb-6 space-y-3">
             <Textarea
@@ -312,16 +375,30 @@ export function IssueDetailPanel({
             </Field>
           </div>
         ) : (
-          <Markdown className="mb-6 text-[13px] leading-[1.7] text-foreground">
+          <Markdown className="text-[13px] leading-[1.7] text-foreground">
             {issue.description}
           </Markdown>
         )}
+        </CollapsibleSection>
 
-        <DetailHeading count={comments.length}>Discussão</DetailHeading>
-        {comments.length === 0 ? (
-          <p className="py-2 text-[12.5px] text-muted-foreground">Nenhum comentário ainda.</p>
-        ) : null}
-        {comments.map((c) => (
+        <Tabs defaultValue="discussion" className="mt-6">
+          <TabsList className="mb-4">
+            <TabsTrigger value="discussion">Discussão ({discussion.length})</TabsTrigger>
+            <TabsTrigger value="activity">Atividade ({activity.length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value="discussion">
+            <CollapsibleSection title="Comentários" count={discussion.length} className="mb-0">
+              <CommentList comments={discussion} empty="Nenhum comentário ainda." />
+            </CollapsibleSection>
+          </TabsContent>
+          <TabsContent value="activity">
+            <CollapsibleSection title="Histórico" count={activity.length} className="mb-0">
+              <CommentList comments={activity} empty="Nenhuma atividade registrada." activity />
+            </CollapsibleSection>
+          </TabsContent>
+        </Tabs>
+        {/* comments are rendered in their respective tabs above */}
+        {false && comments.map((c) => (
           <article key={c.id} className="mb-5 flex gap-2.5">
             <UserAvatar user={c.author} size="md" />
             <div className="min-w-0 flex-1">
@@ -409,6 +486,7 @@ export function IssueDetailPanel({
         )}
       </form>
     </aside>
+    </>
   )
 }
 
@@ -430,6 +508,7 @@ export function IssueCreateForm({
   const [assigneeIds, setAssigneeIds] = useState<readonly number[]>([])
   const [labels, setLabels] = useState<readonly string[]>([])
   const [error, setError] = useState<string>()
+  const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
   return (
     <form
@@ -555,4 +634,62 @@ function DetailHeading({
       )}
     </div>
   )
+}
+
+function CollapsibleSection({
+  title,
+  count,
+  children,
+  className,
+}: {
+  title: string
+  count?: number
+  children: React.ReactNode
+  className?: string
+}) {
+  const [open, setOpen] = useState(true)
+  return (
+    <section className={cn('mb-6', className)}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="mb-3 flex w-full items-center gap-2.5 text-left"
+      >
+        <h3 className="text-[10px] font-semibold tracking-[0.09em] text-muted-foreground uppercase">
+          {title}
+        </h3>
+        <span className="h-px flex-1 bg-border" />
+        {count !== undefined ? <span className="font-mono text-[10.5px] text-muted-foreground">{count}</span> : null}
+        <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', !open && '-rotate-90')} />
+      </button>
+      {open ? children : null}
+    </section>
+  )
+}
+
+function CommentList({
+  comments,
+  empty,
+  activity = false,
+}: {
+  comments: readonly ProviderComment[]
+  empty: string
+  activity?: boolean
+}) {
+  if (!comments.length) return <p className="py-2 text-[12.5px] text-muted-foreground">{empty}</p>
+  return <>
+    {comments.map((c) => (
+      <article key={c.id} className="mb-5 flex gap-2.5">
+        <UserAvatar user={c.author} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-baseline gap-2">
+            <span className="text-[12.5px] font-semibold text-foreground">{c.author?.name ?? 'GitLab'}</span>
+            <time className="font-mono text-[10.5px] text-muted-foreground" dateTime={c.createdAt} title={absoluteTime(c.createdAt)}>{relativeTime(c.createdAt) ?? ''}</time>
+          </div>
+          <Markdown className="text-[12.5px] leading-[1.65] text-foreground" empty="">{activity ? c.body.replace(/^\w+\s+(added|removed|changed)\s+/i, '') : c.body}</Markdown>
+        </div>
+      </article>
+    ))}
+  </>
 }

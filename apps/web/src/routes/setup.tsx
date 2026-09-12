@@ -114,7 +114,10 @@ function Diagnostics({ status, onRetry }: { status: SetupStatus; onRetry?: () =>
 function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | undefined }) {
   const navigate = useNavigate()
   const runtime = useHorizonRuntime()
-  const [scope, setScope] = useState<ScopeDraft>({ groups: [...catalog.scope.groups], projects: [...catalog.scope.projects], followGroups: [...catalog.scope.followGroups] })
+  const [scope, setScope] = useState<ScopeDraft>({
+    groups: [...catalog.scope.groups],
+    projects: [...catalog.scope.projects],
+  })
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const save = async (event: FormEvent) => {
@@ -122,7 +125,7 @@ function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | un
     setBusy(true)
     setError(undefined)
     try {
-      await saveSetupScope({ data: scope })
+      await saveSetupScope({ data: { ...scope, followGroups: scope.groups } })
       await runtime.refresh({ force: true })
       await navigate({ to: '/', search: { view: 'inbox', mode: 'list' } })
     } catch (cause) {
@@ -130,10 +133,10 @@ function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | un
     } finally { setBusy(false) }
   }
   return <form onSubmit={(event) => void save(event)} className="space-y-5">
-    <h1 className="text-2xl font-semibold">Escolha seu Escopo</h1>
+    <h1 className="text-2xl font-semibold">Configure seu Escopo</h1>
     <p className="text-sm text-muted-foreground">{host}</p>
     <ScopePicker groups={catalog.groups} projects={catalog.projects} value={scope} onChange={setScope} />
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    <Button type="submit" disabled={busy || (!scope.groups.length && !scope.projects.length)}>Abrir Inbox</Button>
+    <Button type="submit" disabled={busy || (!scope.groups.length && !scope.projects.length)}>{busy ? 'Salvando…' : 'Salvar e abrir Inbox'}</Button>
   </form>
 }

@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronRight, Folder } from 'lucide-react'
+import { ChevronRight, Folder, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '~/lib/utils'
+import { isIssueVisible } from '@horizon/domain'
 import { hueFor } from '~/lib/tint'
 
 /** One navigable row in the sidebar: a builtin View, a saved View or a project. */
@@ -180,6 +181,11 @@ export function AppSidebar({
   groups,
   standaloneProjects = [],
 }: AppSidebarProps) {
+  const [showEmpty, setShowEmpty] = useState(false)
+  const visibleGroups = showEmpty ? groups : groups.flatMap(withIssues)
+  const visibleStandaloneProjects = showEmpty
+    ? standaloneProjects
+    : standaloneProjects.filter((project) => Number(project.count) > 0)
   return (
     <nav
       aria-label="Navegação do Horizon"
@@ -197,10 +203,10 @@ export function AppSidebar({
       {savedViews.length === 0 ? <Hint>Aplique filtros e salve para criar uma view.</Hint> : null}
 
       <SectionLabel>Grupos</SectionLabel>
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <GroupRow key={group.path} group={group} activeView={activeView} depth={0} />
       ))}
-      {standaloneProjects.map((project) => (
+      {visibleStandaloneProjects.map((project) => (
         <ProjectRow
           key={project.viewParam}
           item={project}
@@ -209,7 +215,34 @@ export function AppSidebar({
       ))}
       {groups.length === 0 && standaloneProjects.length === 0 ? (
         <Hint>Selecione um Escopo para ver grupos e projetos.</Hint>
+      ) : visibleGroups.length === 0 && visibleStandaloneProjects.length === 0 ? (
+        <Hint>Nenhum grupo ou projeto tem issues.</Hint>
       ) : null}
+      {groups.length > 0 || standaloneProjects.length > 0 ? (
+        <label className="mt-2 flex cursor-pointer items-center gap-2 px-2.5 text-[11px] text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showEmpty}
+            onChange={(event) => setShowEmpty(event.target.checked)}
+          />
+          Exibir itens sem issues
+        </label>
+      ) : null}
+
+      <SectionLabel>Configuração</SectionLabel>
+      <Link
+        to="/setup"
+        className={cn(rowClass(false), 'h-[30px] gap-2.5 text-[12.5px]')}
+      >
+        <Settings2 aria-hidden className="size-3.5" />
+        <span>Configurar Escopo</span>
+      </Link>
     </nav>
   )
+}
+
+const withIssues = (group: SidebarGroupItem): readonly SidebarGroupItem[] => {
+  const groups = group.groups.flatMap(withIssues)
+  const projects = group.projects.filter((project) => Number(project.count) > 0)
+  return Number(group.count) > 0 ? [{ ...group, groups, projects }] : []
 }

@@ -141,3 +141,10 @@ export class FakeReadProvider implements ProviderReadContract {
     }
   }
 }
+
+/** Closed issues leave every view after 24 hours, regardless of later edits. */
+export const isIssueVisible = (issue: ProviderIssue, now = Date.now()): boolean => {
+  if (issue.state !== 'closed') return true
+  const closedAt = Date.parse(issue.closedAt ?? '')
+  return Number.isFinite(closedAt) && closedAt <= now && now - closedAt < 86_400_000
+}

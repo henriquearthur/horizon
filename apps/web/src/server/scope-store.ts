@@ -46,7 +46,7 @@ export class ScopeStore {
   /** True when the user still has to pick projects in `/setup`. */
   async isEmpty(): Promise<boolean> {
     const scope = await this.getScope()
-    return scope.projects.length === 0 && scope.followGroups.length === 0
+    return scope.projects.length === 0 && scope.groups.length === 0
   }
 }
 

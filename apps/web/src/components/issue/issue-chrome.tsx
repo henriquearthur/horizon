@@ -1,5 +1,5 @@
 import type { IssuePriority, IssueStatus, ProviderUser } from '@horizon/domain'
-import { TriangleAlert } from 'lucide-react'
+import { CircleCheck, CircleDashed, CircleDot, TriangleAlert, UserRound } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 import { initialsOf } from '~/lib/initials'
@@ -56,13 +56,18 @@ export function StatusDot({
         <TriangleAlert aria-hidden className="size-[9px]" strokeWidth={3} />
       </span>
     )
+  const Icon =
+    status === 'Concluído' ? CircleCheck : status === 'Em andamento' ? CircleDot : CircleDashed
   return (
-    <span
-      aria-hidden
-      title={title ?? status}
-      style={{ background: statusPresentation(status).color }}
-      className={cn('size-[7px] shrink-0 rounded-full', className)}
-    />
+    <span title={title ?? status} className="inline-flex shrink-0">
+      <Icon
+        aria-label={title ?? status}
+        aria-hidden
+        style={{ color: statusPresentation(status).color }}
+        className={cn('size-3.5', className)}
+        strokeWidth={2.25}
+      />
+    </span>
   )
 }
 
@@ -154,7 +159,7 @@ export function UserAvatar({
           name ? 'tint-surface' : 'bg-muted text-muted-foreground',
         )}
       >
-        {initialsOf(name)}
+        {name ? initialsOf(name) : <UserRound aria-hidden className="size-[0.72em]" />}
       </AvatarFallback>
     </Avatar>
   )

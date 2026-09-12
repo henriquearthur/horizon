@@ -124,7 +124,7 @@ function IssueRow({
       onClick={onOpen}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'group relative flex w-full items-start gap-3 rounded-xl py-2.5 pr-3 pl-3.5 text-left transition-colors duration-150',
+        'group relative flex w-full cursor-pointer items-start gap-3 rounded-xl py-2.5 pr-3 pl-3.5 text-left transition-colors duration-150',
         'before:absolute before:top-1/2 before:left-0 before:h-6 before:w-[2.5px] before:-translate-y-1/2 before:rounded-full before:bg-primary before:transition-opacity',
         selected
           ? 'bg-accent/70 before:opacity-100'
@@ -192,7 +192,7 @@ function IssueCard({
       onClick={onOpen}
       aria-current={selected ? 'true' : undefined}
       className={cn(
-        'flex w-full flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-left shadow-xs transition-all duration-200',
+        'flex w-full cursor-pointer flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-left shadow-xs transition-all duration-200',
         draggable && 'cursor-grab active:cursor-grabbing',
         'hover:-translate-y-px hover:border-ring/50 hover:shadow-md',
         selected && 'border-primary shadow-md ring-1 ring-primary/30',

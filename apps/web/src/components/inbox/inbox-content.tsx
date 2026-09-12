@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
   filterIssues,
+  isIssueVisible,
   groupIssues,
   readIssueProperties,
   searchIssues,
@@ -93,6 +94,8 @@ export function InboxContent({
   const [selected, setSelected] = useState<ProviderIssue>()
   const [comments, setComments] = useState<readonly ProviderComment[]>([])
   const [detailError, setDetailError] = useState<string>()
+  const [detailLoading, setDetailLoading] = useState(false)
+  const detailRequest = useRef(0)
   const [creating, setCreating] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<number>()
   const [saveName, setSaveName] = useState('')
@@ -158,7 +161,7 @@ export function InboxContent({
     [snapshot.projects],
   )
   const available = useMemo(() => {
-    let issues = snapshot.issues
+    let issues = snapshot.issues.filter((issue) => isIssueVisible(issue))
     if (view._tag === 'Project')
       issues = issues.filter((issue) => {
         const project = projectById.get(issue.projectId)
@@ -298,14 +301,23 @@ export function InboxContent({
     setSelected(issue)
     setComments([])
     setDetailError(undefined)
+    const requestId = ++detailRequest.current
+    setDetailLoading(true)
     try {
       setComments(await provider.listComments(issue.projectId, issue.iid))
     } catch (cause) {
       setDetailError(
         cause instanceof Error ? cause.message : 'Não foi possível carregar a discussão.',
       )
+    } finally {
+      if (detailRequest.current === requestId) setDetailLoading(false)
     }
   }
+
+  useEffect(() => {
+    setSelected(undefined)
+    setComments([])
+  }, [view, mode, query])
 
   const changeStatus = async (issue: ProviderIssue, status: IssueStatus) => {
     setDetailError(undefined)
@@ -550,6 +562,8 @@ export function InboxContent({
             onUpdated={setSelected}
             onCommentCreated={(comment) => setComments((current) => [...current, comment])}
             users={snapshot.users}
+            currentUser={snapshot.connection.user}
+            loading={detailLoading}
             availableLabels={labels}
           />
         ) : null}

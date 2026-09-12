@@ -3,7 +3,7 @@ import type { ProviderGroup, ProviderProject } from './provider.ts'
 export type ScopeSelection = {
   readonly groups: readonly string[]
   readonly projects: readonly number[]
-  /** Groups whose future projects should join automatically. */
+  /** @deprecated Kept in persisted data for compatibility; always mirrors `groups`. */
   readonly followGroups: readonly string[]
 }
 
@@ -30,13 +30,7 @@ export const normalizeScopeSelection = (selection: Partial<ScopeSelection>): Sco
         ),
       ),
     ],
-    followGroups: [
-      ...new Set(
-        (selection.followGroups ?? []).filter(
-          (value): value is string => typeof value === 'string' && groups.includes(value),
-        ),
-      ),
-    ],
+    followGroups: groups,
   }
 }
 
@@ -50,7 +44,7 @@ export const projectBelongsToGroup = (
 
 export const isProjectSelected = (project: ProviderProject, selection: ScopeSelection): boolean =>
   selection.projects.includes(project.id) ||
-  selection.followGroups.some((group) => projectBelongsToGroup(project, group))
+  selection.groups.some((group) => projectBelongsToGroup(project, group))
 
 export const selectedGroups = (
   groups: readonly ProviderGroup[],
