@@ -146,5 +146,5 @@ export class FakeReadProvider implements ProviderReadContract {
 export const isIssueVisible = (issue: ProviderIssue, now = Date.now()): boolean => {
   if (issue.state !== 'closed') return true
   const closedAt = Date.parse(issue.closedAt ?? '')
-  return !issue.closedAt || (Number.isFinite(closedAt) && closedAt <= now && now - closedAt < 86_400_000)
+  return Number.isFinite(closedAt) && closedAt <= now && now - closedAt < 86_400_000
 }

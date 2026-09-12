@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { ChevronRight, Folder, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '~/lib/utils'
+import { isIssueVisible } from '@horizon/domain'
 import { hueFor } from '~/lib/tint'
 
 /** One navigable row in the sidebar: a builtin View, a saved View or a project. */

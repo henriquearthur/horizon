@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
@@ -95,6 +95,7 @@ export function InboxContent({
   const [comments, setComments] = useState<readonly ProviderComment[]>([])
   const [detailError, setDetailError] = useState<string>()
   const [detailLoading, setDetailLoading] = useState(false)
+  const detailRequest = useRef(0)
   const [creating, setCreating] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<number>()
   const [saveName, setSaveName] = useState('')
@@ -300,6 +301,7 @@ export function InboxContent({
     setSelected(issue)
     setComments([])
     setDetailError(undefined)
+    const requestId = ++detailRequest.current
     setDetailLoading(true)
     try {
       setComments(await provider.listComments(issue.projectId, issue.iid))
@@ -308,7 +310,7 @@ export function InboxContent({
         cause instanceof Error ? cause.message : 'Não foi possível carregar a discussão.',
       )
     } finally {
-      setDetailLoading(false)
+      if (detailRequest.current === requestId) setDetailLoading(false)
     }
   }
 

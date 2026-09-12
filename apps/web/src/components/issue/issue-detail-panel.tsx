@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   ProviderComment,
   ProviderIssue,
+  ProviderMergeRequest,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
@@ -66,6 +67,7 @@ export function IssueDetailPanel({
   )
   const [labels, setLabels] = useState<readonly string[]>(issue.labels)
   const [error, setError] = useState<string>()
+  const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
@@ -73,6 +75,7 @@ export function IssueDetailPanel({
   const activity = comments.filter((item) => item.system)
 
   useEffect(() => {
+    void provider.listMergeRequests?.(issue.projectId, issue.iid).then(setMergeRequests)
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
@@ -315,11 +318,11 @@ export function IssueDetailPanel({
         <DetailMeta label="Criado">
           <span title={absoluteTime(issue.createdAt)}>{relativeTime(issue.createdAt) ?? '—'}</span>
         </DetailMeta>
-        {issue.mergeRequestCount ? (
+        {mergeRequests.length ? (
           <DetailMeta label="Merge requests">
             <span className="flex items-center gap-1.5 text-primary">
               <GitMerge aria-hidden className="size-3" />
-              {issue.mergeRequestCount}
+              {mergeRequests.map((mr) => <a key={mr.id} href={mr.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline">!{mr.iid} {mr.title}</a>)}
             </span>
           </DetailMeta>
         ) : null}
@@ -500,6 +503,7 @@ export function IssueCreateForm({
   const [assigneeIds, setAssigneeIds] = useState<readonly number[]>([])
   const [labels, setLabels] = useState<readonly string[]>([])
   const [error, setError] = useState<string>()
+  const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
   return (
     <form
