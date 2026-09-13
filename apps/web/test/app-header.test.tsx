@@ -49,6 +49,33 @@ describe('AppHeader', () => {
     expect(onQueryChange).toHaveBeenCalledWith('f')
   })
 
+  it('clears the controlled search without leaving stale text', async () => {
+    const onQueryChange = vi.fn()
+    await renderHeader({ query: 'antiga', onQueryChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }))
+    expect(onQueryChange).toHaveBeenLastCalledWith('')
+  })
+
+  it('opens and focuses the same global search with Command+K and Ctrl+K', async () => {
+    await renderHeader()
+    const search = screen.getByRole('searchbox', { name: 'Buscar issues, projetos, discussões' })
+    await userEvent.keyboard('{Meta>}k{/Meta}')
+    expect(search).toHaveFocus()
+    search.blur()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    expect(search).toHaveFocus()
+  })
+
+  it('navigates through matching actions with the keyboard', async () => {
+    const onNavigate = vi.fn()
+    await renderHeader({ query: 'configurar', onNavigate })
+    const search = screen.getByRole('searchbox', { name: 'Buscar issues, projetos, discussões' })
+    await userEvent.click(search)
+    expect(screen.getByRole('option', { name: /Configurar escopo/ })).toBeInTheDocument()
+    await userEvent.keyboard('{Enter}')
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'action', id: 'scope' })
+  })
+
   it('offers the opposite theme on the toggle', async () => {
     await renderHeader()
     expect(screen.getByRole('button', { name: /tema escuro/i })).toHaveTextContent('Escuro')
