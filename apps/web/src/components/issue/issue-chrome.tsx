@@ -144,7 +144,8 @@ export function StatusDot({
       </span>
     )
   // A blocked Issue says so where its state already is: the dot itself becomes
-  // the barred circle, the way GitHub marks a blocked sub-issue.
+  // the barred circle, the way GitHub marks a blocked sub-issue. It is red, not
+  // amber: amber is what `Em andamento` already wears.
   if (blocked) {
     const label = blockedTitle ?? `${status} · bloqueada`
     return (
@@ -152,7 +153,7 @@ export function StatusDot({
         <CircleSlash
           aria-label={label}
           aria-hidden
-          className={cn('size-3.5 text-amber-600 dark:text-amber-500', className)}
+          className={cn('size-3.5 text-destructive', className)}
           strokeWidth={2.25}
         />
       </span>
