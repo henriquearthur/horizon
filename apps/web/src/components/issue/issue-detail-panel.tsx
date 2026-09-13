@@ -5,6 +5,7 @@ import type {
   ProviderComment,
   ProviderIssue,
   ProviderMergeRequest,
+  ProviderProject,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
@@ -23,6 +24,7 @@ import {
   ChevronDown,
   CornerLeftUp,
   ExternalLink,
+  FolderGit2,
   FolderKanban,
   GitMerge,
   ListTree,
@@ -38,7 +40,7 @@ import {
 import {
   IssueStatusMenu,
   LabelChip,
-  TypeBadge,
+  TypeMark,
   PriorityBadge,
   StatusDot,
   UserAvatar,
@@ -57,9 +59,24 @@ import {
 } from '~/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Textarea } from '~/components/ui/textarea'
-import { absoluteTime, relativeTime, visibleLabels, issueTypes } from '~/lib/issue-presentation'
+import {
+  absoluteTime,
+  byAge,
+  isTypeLabel,
+  relativeTime,
+  visibleLabels,
+  issueTypes,
+  projectPath,
+} from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
+
+/**
+ * Labels Horizon writes itself — Status, Prioridade, Projeto, Bloqueio — plus
+ * the `type:*` labels that carry Tipo. None of them is edited as a Label, and
+ * all of them must survive a save from the Label picker.
+ */
+const isOwnedLabel = (label: string): boolean => isHorizonLabel(label) || isTypeLabel(label)
 
 export function IssueDetailPanel({
   issue,
@@ -78,6 +95,7 @@ export function IssueDetailPanel({
   parent,
   onOpenIssue,
   allIssues = [],
+  projects = [],
   initiatives = [],
 }: {
   issue: ProviderIssue
@@ -93,6 +111,8 @@ export function IssueDetailPanel({
   onOpenIssue?: (issue: ProviderIssue) => void
   /** Every Issue of the Escopo, so blocking links can point anywhere. */
   allIssues?: readonly ProviderIssue[]
+  /** The projects of the Escopo, so a linked Issue can name its repository. */
+  projects?: readonly ProviderProject[]
   initiatives?: readonly Initiative[]
   loading?: boolean
   currentUser?: ProviderUser
@@ -127,8 +147,8 @@ export function IssueDetailPanel({
   const labelOptions = useMemo(
     () =>
       metadata.labels.length
-        ? metadata.labels.filter((label) => !isHorizonLabel(label))
-        : availableLabels,
+        ? metadata.labels.filter((label) => !isOwnedLabel(label))
+        : availableLabels.filter((label) => !isOwnedLabel(label)),
     [metadata.labels, availableLabels],
   )
   const discussion = comments.filter((item) => !item.system)
@@ -256,14 +276,14 @@ export function IssueDetailPanel({
               onChange={(e) => setTitle(e.target.value)}
             />
           ) : (
-            <h2 className="mb-3 text-[17px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
-              {issue.title}
+            <h2 className="mb-3 flex items-start gap-1.5 text-[17px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
+              <TypeMark types={types} className="mt-[5px]" iconClassName="size-[15px]" />
+              <span className="min-w-0">{issue.title}</span>
             </h2>
           )}
 
-          {types.length || shownLabels.length ? (
+          {shownLabels.length ? (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <TypeBadge types={types} />
               {shownLabels.map((label) => (
                 <LabelChip key={label} label={label} />
               ))}
@@ -444,7 +464,7 @@ export function IssueDetailPanel({
         <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
           {subIssues.length ? (
             <CollapsibleSection title="Sub-issues" count={subIssues.length}>
-              <SubIssueList issues={subIssues} onOpenIssue={onOpenIssue} />
+              <SubIssueList issues={subIssues} allIssues={allIssues} onOpenIssue={onOpenIssue} />
             </CollapsibleSection>
           ) : null}
 
@@ -457,6 +477,7 @@ export function IssueDetailPanel({
               blocking={blocking}
               blockedByReferences={blockedByReferences}
               candidates={allIssues}
+              projects={projects}
               disabled={busy}
               onLink={(target) =>
                 void mutate(() =>
@@ -523,7 +544,7 @@ export function IssueDetailPanel({
                       adornment: <LabelChip label={label} className="max-w-24" />,
                     }))}
                     selected={visibleLabels(labels)}
-                    onChange={(next) => setLabels([...labels.filter(isHorizonLabel), ...next])}
+                    onChange={(next) => setLabels([...labels.filter(isOwnedLabel), ...next])}
                   />
                 </Field>
               </div>
@@ -684,8 +705,8 @@ export function IssueCreateForm({
   const metadata = useProjectMetadata(projectId)
   const people = metadata.users.length ? metadata.users : users
   const labelOptions = metadata.labels.length
-    ? metadata.labels.filter((label) => !isHorizonLabel(label))
-    : availableLabels
+    ? metadata.labels.filter((label) => !isOwnedLabel(label))
+    : availableLabels.filter((label) => !isOwnedLabel(label))
   return (
     <form
       className="space-y-3"
@@ -831,6 +852,7 @@ function BlockingSection({
   blocking,
   blockedByReferences,
   candidates,
+  projects,
   disabled,
   onLink,
   onLinkReverse,
@@ -841,6 +863,7 @@ function BlockingSection({
   blocking: readonly BlockingReference[]
   blockedByReferences: readonly BlockingReference[]
   candidates: readonly ProviderIssue[]
+  projects: readonly ProviderProject[]
   disabled: boolean
   onLink: (target: ProviderIssue) => void
   onLinkReverse: (source: ProviderIssue) => void
@@ -852,9 +875,14 @@ function BlockingSection({
     ...blocking.map((reference) => reference.target),
     ...blockedByReferences.map((reference) => reference.source),
   ])
+  // A Bloqueio is only offered inside the repository of the Issue: a picker
+  // over the whole Escopo turns a link into a needle in a haystack. Links that
+  // already cross repositories keep being read and shown above.
   const selectable = candidates.filter(
     (candidate) =>
-      candidate.id !== issue.id && !linked.has(`${candidate.projectId}:${candidate.iid}`),
+      candidate.projectId === issue.projectId &&
+      candidate.id !== issue.id &&
+      !linked.has(`${candidate.projectId}:${candidate.iid}`),
   )
 
   const row = (reference: BlockingReference, other: ProviderIssue | undefined, key: string) => (
@@ -875,7 +903,10 @@ function BlockingSection({
       >
         {other?.title ?? `Issue ${key} fora do Escopo`}
       </button>
-      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">#{key}</span>
+      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">
+        {other ? repositoryOf(other, projects) : key.split(':')[0]}
+        <span className="ml-1.5 opacity-70">#{other?.iid ?? key.split(':')[1]}</span>
+      </span>
       <Button
         size="icon-xs"
         variant="ghost"
@@ -929,6 +960,7 @@ function BlockingSection({
         </Select>
         <IssuePicker
           issues={selectable}
+          projects={projects}
           disabled={disabled}
           onPick={(picked) => (direction === 'blocks' ? onLink(picked) : onLinkReverse(picked))}
         />
@@ -937,24 +969,37 @@ function BlockingSection({
   )
 }
 
-/** A searchable one-shot issue chooser, used to point a blocking link at. */
+/**
+ * A searchable one-shot issue chooser. A blocking link can point at any
+ * repository of the Escopo, so the chooser groups by repository and names it:
+ * `#12` alone says nothing when twenty projects each have one.
+ */
 function IssuePicker({
   issues,
+  projects,
   disabled,
   onPick,
 }: {
   issues: readonly ProviderIssue[]
+  projects: readonly ProviderProject[]
   disabled: boolean
   onPick: (issue: ProviderIssue) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const needle = query.trim().toLocaleLowerCase()
-  const visible = issues
-    .filter(
-      (issue) => !needle || `#${issue.iid} ${issue.title}`.toLocaleLowerCase().includes(needle),
-    )
-    .slice(0, 50)
+  const groups = useMemo(() => {
+    const byRepository = new Map<string, ProviderIssue[]>()
+    let shown = 0
+    for (const issue of issues) {
+      const repository = repositoryOf(issue, projects)
+      if (needle && !`#${issue.iid} ${issue.title}`.toLocaleLowerCase().includes(needle)) continue
+      if (shown >= 50) break
+      shown += 1
+      byRepository.set(repository, [...(byRepository.get(repository) ?? []), issue])
+    }
+    return [...byRepository.entries()]
+  }, [issues, projects, needle])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -964,7 +1009,7 @@ function IssuePicker({
           Adicionar bloqueio
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(22rem,80vw)] p-0">
+      <PopoverContent align="start" className="w-[min(24rem,80vw)] p-0">
         <div className="relative flex items-center border-b p-1.5">
           <Search
             aria-hidden
@@ -973,32 +1018,41 @@ function IssuePicker({
           <Input
             autoFocus
             aria-label="Buscar issue para vincular"
-            placeholder="Buscar issue…"
+            placeholder="Buscar por título ou #número…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="h-7 border-0 bg-transparent pl-6 text-xs shadow-none focus-visible:ring-0"
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
-          {visible.map((issue) => (
-            <button
-              key={issue.id}
-              type="button"
-              onClick={() => {
-                onPick(issue)
-                setQuery('')
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-hover"
-            >
-              <StatusDot status={readIssueProperties(issue).status} />
-              <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-              <span className="flex-none font-mono text-[10px] text-muted-foreground">
-                #{issue.iid}
-              </span>
-            </button>
+        <div className="max-h-72 overflow-y-auto p-1">
+          {groups.map(([repository, found]) => (
+            <div key={repository} className="mb-1 last:mb-0">
+              <p className="sticky top-0 z-10 flex items-center gap-1.5 bg-popover px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                <FolderGit2 aria-hidden className="size-3 flex-none" />
+                <span className="min-w-0 truncate">{repository}</span>
+                <span className="ml-auto tabular-nums opacity-70">{found.length}</span>
+              </p>
+              {found.map((issue) => (
+                <button
+                  key={issue.id}
+                  type="button"
+                  onClick={() => {
+                    onPick(issue)
+                    setQuery('')
+                    setOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 pl-3.5 text-left text-xs transition-colors hover:bg-hover"
+                >
+                  <StatusDot status={readIssueProperties(issue).status} />
+                  <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+                  <span className="flex-none font-mono text-[10px] text-muted-foreground">
+                    #{issue.iid}
+                  </span>
+                </button>
+              ))}
+            </div>
           ))}
-          {!visible.length ? (
+          {!groups.length ? (
             <p className="px-2 py-3 text-center text-xs text-muted-foreground">
               Nenhuma issue encontrada.
             </p>
@@ -1009,15 +1063,34 @@ function IssuePicker({
   )
 }
 
+/** `grupo/projeto` for an Issue, falling back to the raw project id. */
+function repositoryOf(issue: ProviderIssue, projects: readonly ProviderProject[]): string {
+  return projectPath(
+    projects.find((project) => project.id === issue.projectId),
+    issue.projectId,
+  )
+}
+
 /** Sub-issues, as Linear shows them: state, title and a way straight into each one. */
 function SubIssueList({
   issues,
+  allIssues = [],
   onOpenIssue,
 }: {
   issues: readonly ProviderIssue[]
+  /** Every Issue of the Escopo, so a Bloqueio on a child can be read here. */
+  allIssues?: readonly ProviderIssue[]
   onOpenIssue?: ((issue: ProviderIssue) => void) | undefined
 }) {
   const done = issues.filter((item) => readIssueProperties(item).status === 'Concluído').length
+  // Oldest first, newest at the end, whatever order the caller handed over.
+  const ordered = [...issues].sort(byAge)
+  // A child still held back by an open blocker says so on its own dot.
+  const blockersOf = (child: ProviderIssue) =>
+    blockedBy(child, allIssues).filter(
+      (reference) =>
+        reference.sourceIssue && readIssueProperties(reference.sourceIssue).status !== 'Concluído',
+    )
   return (
     <div className="space-y-1">
       <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -1032,8 +1105,9 @@ function SubIssueList({
           />
         </span>
       </div>
-      {issues.map((child) => {
+      {ordered.map((child) => {
         const properties = readIssueProperties(child)
+        const blockers = blockersOf(child)
         return (
           <button
             key={child.id}
@@ -1041,7 +1115,18 @@ function SubIssueList({
             onClick={() => onOpenIssue?.(child)}
             className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
           >
-            <StatusDot status={properties.status} conflict={properties.conflicts.status} />
+            <StatusDot
+              status={properties.status}
+              conflict={properties.conflicts.status}
+              blocked={blockers.length > 0}
+              {...(blockers.length
+                ? {
+                    blockedTitle: `Bloqueada por ${blockers
+                      .map((reference) => `#${reference.sourceIssue?.iid}`)
+                      .join(', ')}`,
+                  }
+                : {})}
+            />
             <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
               {child.title}
             </span>

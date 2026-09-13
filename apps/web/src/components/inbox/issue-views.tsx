@@ -12,7 +12,7 @@ import {
   AssigneeStack,
   LabelChip,
   LabelOverflow,
-  TypeBadge,
+  TypeMark,
   MetaCount,
   PriorityBadge,
   StatusDot,
@@ -40,6 +40,8 @@ export interface IssueViewsProps {
   readonly onStatusChange?: (issue: ProviderIssue, status: IssueStatus) => void
   /** Sub-issues rolled up under each Issue, keyed by `projectId:iid`. */
   readonly childrenOf?: ReadonlyMap<string, readonly ProviderIssue[]>
+  /** `projectId:iid` of the Issues an open Bloqueio still holds back. */
+  readonly blockedKeys?: ReadonlySet<string>
 }
 
 export const issueKey = (issue: Pick<ProviderIssue, 'projectId' | 'iid'>): string =>
@@ -143,6 +145,7 @@ function IssueRow({
   code,
   selected,
   onOpen,
+  blocked = false,
   childCount = 0,
   doneChildren = 0,
   expanded,
@@ -155,6 +158,8 @@ function IssueRow({
   code: string
   selected: boolean
   onOpen: () => void
+  /** An open Bloqueio still holds this Issue back. */
+  blocked?: boolean
   childCount?: number
   doneChildren?: number
   expanded?: boolean
@@ -202,6 +207,8 @@ function IssueRow({
           <IssueStatusMenu
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             onChange={onStatusChange}
             className="-ml-1"
           />
@@ -209,11 +216,14 @@ function IssueRow({
           <StatusDot
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             className="mt-[5px]"
           />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 items-center gap-2">
+            <TypeMark types={types} />
             <button
               type="button"
               onClick={(event) => {
@@ -224,9 +234,8 @@ function IssueRow({
             >
               {issue.title}
             </button>
-            {types.length || labels.length ? (
+            {labels.length ? (
               <div className="hidden max-w-[42%] shrink-0 items-center gap-1.5 sm:flex">
-                <TypeBadge types={types} />
                 <IssueLabels labels={labels} limit={LIST_LABEL_LIMIT} />
               </div>
             ) : null}
@@ -316,19 +325,21 @@ function IssueCard({
         <span className="min-w-0 flex-1 truncate">{path}</span>
         <span className="flex-none font-medium">{code}</span>
       </div>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onOpen()
-        }}
-        className="text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
-      >
-        {issue.title}
-      </button>
-      {types.length || labels.length ? (
+      <div className="flex min-w-0 items-start gap-1.5">
+        <TypeMark types={types} className="mt-[3px]" />
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen()
+          }}
+          className="min-w-0 flex-1 text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
+        >
+          {issue.title}
+        </button>
+      </div>
+      {labels.length ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <TypeBadge types={types} />
           <IssueLabels labels={labels} limit={CARD_LABEL_LIMIT} />
         </div>
       ) : null}
@@ -359,6 +370,7 @@ export function IssueViews({
   selectedId,
   onStatusChange,
   childrenOf,
+  blockedKeys,
 }: IssueViewsProps) {
   const [dragging, setDragging] = useState<number>()
   const [dragOver, setDragOver] = useState<string>()
@@ -368,6 +380,7 @@ export function IssueViews({
     projectPath(projectById.get(issue.projectId), issue.projectId)
   const codeFor = (issue: ProviderIssue) => issueCode(issue, projectById.get(issue.projectId))
   const childrenFor = (issue: ProviderIssue) => childrenOf?.get(issueKey(issue)) ?? []
+  const isBlocked = (issue: ProviderIssue) => blockedKeys?.has(issueKey(issue)) ?? false
   const toggle = (key: string) =>
     setExpanded((current) => {
       const next = new Set(current)
@@ -512,6 +525,7 @@ export function IssueViews({
           code={codeFor(issue)}
           selected={issue.id === selectedId}
           onOpen={() => onOpen(issue)}
+          blocked={isBlocked(issue)}
           childCount={children.length}
           doneChildren={doneCount(children)}
           expanded={open}

@@ -49,10 +49,14 @@ export const searchIssues = (
       .filter((p) => `${p.name} ${p.namespace}`.toLocaleLowerCase().includes(q))
       .map((p) => p.id),
   )
+  // Labels Horizon writes itself are machinery, not text: a search for
+  // `blocks` or `status` must not return every Issue that carries one.
   return issues.filter(
     (i) =>
       ids.has(i.projectId) ||
-      `${i.title} ${i.description ?? ''} ${i.labels.join(' ')}`.toLocaleLowerCase().includes(q),
+      `${i.title} ${i.description ?? ''} ${i.labels.filter((l) => !isHorizonLabel(l)).join(' ')}`
+        .toLocaleLowerCase()
+        .includes(q),
   )
 }
 

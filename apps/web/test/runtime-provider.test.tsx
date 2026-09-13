@@ -85,6 +85,29 @@ describe('HorizonRuntimeProvider', () => {
     })
   })
 
+  it('keeps the parent link a write answer cannot carry', () => {
+    const child = { ...snapshot('Antes').issues[0]!, parentIid: 4, hasChildren: false }
+    const answered = { ...child, labels: ['horizon-blocks:1:9:1:2'] }
+    delete (answered as { parentIid?: number }).parentIid
+
+    expect(replaceIssueInList([child], answered)[0]).toMatchObject({
+      parentIid: 4,
+      labels: answered.labels,
+    })
+  })
+
+  it('drops the close date of an Issue that came back open', () => {
+    const closed = {
+      ...snapshot('Antes').issues[0]!,
+      state: 'closed' as const,
+      closedAt: '2026-09-01T10:00:00Z',
+    }
+    const reopened = { ...closed, state: 'opened' as const }
+    delete (reopened as { closedAt?: string }).closedAt
+
+    expect(replaceIssueInList([closed], reopened)[0]).not.toHaveProperty('closedAt')
+  })
+
   it('loads the scoped cache and replaces it after manual refresh', async () => {
     const loadSnapshot = vi
       .fn<() => Promise<RuntimeSnapshot>>()

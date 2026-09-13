@@ -43,11 +43,33 @@ export const replaceIssueInList = (
   preserveUpdatedAt = false,
 ): readonly ProviderIssue[] => {
   if (!issues.some((item) => item.id === issue.id)) return [issue, ...issues]
-  return issues.map((item) => {
-    if (item.id !== issue.id || !preserveUpdatedAt) return item.id === issue.id ? issue : item
-    const { updatedAt: _providerTimestamp, ...withoutUpdatedAt } = issue
-    return item.updatedAt ? { ...withoutUpdatedAt, updatedAt: item.updatedAt } : withoutUpdatedAt
-  })
+  return issues.map((item) =>
+    item.id === issue.id ? merged(item, issue, preserveUpdatedAt) : item,
+  )
+}
+
+/**
+ * A write answers with the REST issue, and REST knows nothing about the
+ * parent/child links: those are read from GraphQL when the snapshot is built.
+ * Replacing the cached Issue with the answer would drop `parentIid` and
+ * `hasChildren` — a sub-issue would jump to the top level, and one kept on
+ * screen only by its parent would disappear until the next full read. So the
+ * answer is merged over what is already known.
+ */
+const merged = (
+  cached: ProviderIssue,
+  issue: ProviderIssue,
+  preserveUpdatedAt: boolean,
+): ProviderIssue => {
+  // A reopened Issue has no close date, even though the answer never says so.
+  const { closedAt, ...previous } = cached
+  return {
+    ...previous,
+    ...(issue.state === 'closed' && closedAt ? { closedAt } : {}),
+    ...issue,
+    // Assignment is metadata, not a reason to jump to the top of the list.
+    ...(preserveUpdatedAt && cached.updatedAt ? { updatedAt: cached.updatedAt } : {}),
+  }
 }
 
 const readRuntimeCache = (): RuntimeSnapshot | undefined => {
@@ -183,8 +205,6 @@ export function HorizonRuntimeProvider({
       },
       updateIssue: async (projectId, iid, changes) => {
         const issue = await updateRuntimeIssue({ data: { projectId, iid, changes } })
-        // Assignment is metadata, not a reason to make a card jump to the top
-        // of an update-sorted list while the user is reading it.
         const assignmentOnly = Object.keys(changes).every((key) => key === 'assigneeIds')
         replaceIssue(issue, assignmentOnly)
         return issue

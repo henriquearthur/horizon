@@ -128,3 +128,15 @@ export const visibleLabels = (labels: readonly string[]): readonly string[] =>
 /** The type of the Issue, without the `type:` prefix, e.g. `spec`. */
 export const issueTypes = (labels: readonly string[]): readonly string[] =>
   labels.filter(isTypeLabel).map((label) => label.slice(TYPE_PREFIX.length).trim().toLowerCase())
+
+/**
+ * Sub-issues read like a story: the oldest first, the newest at the end. The
+ * Provider does not promise an order, so Horizon imposes this one wherever
+ * children of an Issue are listed.
+ */
+export const byAge = (a: ProviderIssue, b: ProviderIssue): number => {
+  const left = Date.parse(a.createdAt ?? '')
+  const right = Date.parse(b.createdAt ?? '')
+  if (Number.isNaN(left) || Number.isNaN(right) || left === right) return a.iid - b.iid
+  return left - right
+}

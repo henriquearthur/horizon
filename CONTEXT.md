@@ -25,7 +25,8 @@ projects created later join the Escopo on their own.
 
 A work item the Provider links under another Issue — a GitLab child item. A
 sub-issue never shows twice: in the list and in the Kanban it hangs under its
-parent, and the parent carries the `concluídos/total` roll-up.
+parent, and the parent carries the `concluídos/total` roll-up. Sub-issues are
+listed oldest first, so the newest one sits at the end.
 
 ## Issue
 
@@ -57,8 +58,9 @@ it.
 ## Tipo
 
 The kind of work item, read from the Provider labels the wayfinder skill
-brings: `type:spec`, `type:ticket` and their siblings. Horizon shows it as its
-own quiet badge in the list, in the Kanban and in the Detail, never as a Label.
+brings: `type:spec`, `type:ticket` and their siblings. Tipo is never drawn as a
+Label: it is a single coloured glyph leading the title — in the list, in the
+Kanban and in the Detail — with the word itself in the tooltip.
 
 ## Bloqueio
 
@@ -66,8 +68,12 @@ A dependency between two Issues, `bloqueia` in one direction and `é bloqueada
 por` in the other. GitLab CE has no native link, so Horizon writes it as a
 label on the blocking Issue: `horizon-blocks:<projeto>:<iid>:<projeto>:<iid>`.
 The single colon is deliberate — see
-`docs/adr/0002-bloqueio-nao-usa-scoped-label.md`. A link whose other end is
-outside the Escopo is shown as unreachable instead of disappearing.
+`docs/adr/0002-bloqueio-nao-usa-scoped-label.md`. A new Bloqueio is only offered between
+Issues of the same repository; links that already cross repositories keep being
+read and shown. A link whose other end is outside the Escopo is shown as
+unreachable instead of disappearing. While a blocker is still open, the blocked
+Issue wears a red barred circle in place of its Status dot wherever sub-issues
+are listed.
 
 ## Projeto
 
