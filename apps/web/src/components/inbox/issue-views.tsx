@@ -230,9 +230,16 @@ function IssueRow({
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[13.5px] leading-snug font-medium text-foreground">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                onOpen()
+              }}
+              className="min-w-0 flex-1 truncate text-left text-[13.5px] leading-snug font-medium text-foreground"
+            >
               {issue.title}
-            </span>
+            </button>
             <div className="hidden max-w-[42%] shrink-0 items-center gap-1.5 sm:flex">
               <TypeBadge types={types} />
               <IssueLabels labels={labels} limit={LIST_LABEL_LIMIT} />
@@ -337,9 +344,16 @@ function IssueCard({
         <span className="min-w-0 flex-1 truncate">{path}</span>
         <span className="flex-none font-medium">{code}</span>
       </div>
-      <div className="text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onOpen()
+        }}
+        className="text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
+      >
         {issue.title}
-      </div>
+      </button>
       <TypeBadge types={types} />
       {labels.length ? (
         <div className="flex flex-wrap items-center gap-1.5">
