@@ -15,6 +15,7 @@ import {
   MetaCount,
   PriorityBadge,
   StatusDot,
+  IssueStatusMenu,
 } from '~/components/issue/issue-chrome'
 import {
   issueCode,
@@ -126,6 +127,7 @@ function IssueRow({
   expanded,
   onToggle,
   depth = 0,
+  onStatusChange,
 }: {
   issue: ProviderIssue
   path: string
@@ -137,6 +139,7 @@ function IssueRow({
   expanded?: boolean
   onToggle?: () => void
   depth?: number
+  onStatusChange?: (status: IssueStatus) => void
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
@@ -174,11 +177,20 @@ function IssueRow({
             : 'before:opacity-0 hover:bg-hover focus-visible:bg-hover',
         )}
       >
-        <StatusDot
-          status={properties.status}
-          conflict={properties.conflicts.status}
-          className="mt-[5px]"
-        />
+        {onStatusChange ? (
+          <IssueStatusMenu
+            status={properties.status}
+            conflict={properties.conflicts.status}
+            onChange={onStatusChange}
+            className="-ml-1"
+          />
+        ) : (
+          <StatusDot
+            status={properties.status}
+            conflict={properties.conflicts.status}
+            className="mt-[5px]"
+          />
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-[13.5px] leading-snug font-medium text-foreground">
@@ -217,6 +229,7 @@ function IssueCard({
   draggable,
   childCount = 0,
   doneChildren = 0,
+  onStatusChange,
 }: {
   issue: ProviderIssue
   path: string
@@ -229,6 +242,7 @@ function IssueCard({
   draggable: boolean
   childCount?: number
   doneChildren?: number
+  onStatusChange?: (status: IssueStatus) => void
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
@@ -254,11 +268,20 @@ function IssueCard({
       )}
     >
       <div className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted-foreground">
-        <StatusDot
-          status={properties.status}
-          conflict={properties.conflicts.status}
-          className="size-1.5"
-        />
+        {onStatusChange ? (
+          <IssueStatusMenu
+            status={properties.status}
+            conflict={properties.conflicts.status}
+            onChange={onStatusChange}
+            className="-m-1 size-5"
+          />
+        ) : (
+          <StatusDot
+            status={properties.status}
+            conflict={properties.conflicts.status}
+            className="size-1.5"
+          />
+        )}
         <span className="min-w-0 flex-1 truncate">{path}</span>
         <span className="flex-none font-medium">{code}</span>
       </div>
@@ -401,6 +424,7 @@ export function IssueViews({
                           setDragging(undefined)
                           setDragOver(undefined)
                         }}
+                        onStatusChange={(status) => onStatusChange?.(issue, status)}
                       />
                     ))}
                     {!cards.length && (
@@ -454,6 +478,7 @@ export function IssueViews({
           expanded={open}
           onToggle={() => toggle(key)}
           depth={depth}
+          onStatusChange={(status) => onStatusChange?.(issue, status)}
         />
         {open ? children.map((child) => renderRow(child, depth + 1)) : null}
       </div>
