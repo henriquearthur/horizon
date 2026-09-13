@@ -867,9 +867,14 @@ function BlockingSection({
     ...blocking.map((reference) => reference.target),
     ...blockedByReferences.map((reference) => reference.source),
   ])
+  // A Bloqueio is only offered inside the repository of the Issue: a picker
+  // over the whole Escopo turns a link into a needle in a haystack. Links that
+  // already cross repositories keep being read and shown above.
   const selectable = candidates.filter(
     (candidate) =>
-      candidate.id !== issue.id && !linked.has(`${candidate.projectId}:${candidate.iid}`),
+      candidate.projectId === issue.projectId &&
+      candidate.id !== issue.id &&
+      !linked.has(`${candidate.projectId}:${candidate.iid}`),
   )
 
   const row = (reference: BlockingReference, other: ProviderIssue | undefined, key: string) => (
@@ -980,11 +985,7 @@ function IssuePicker({
     let shown = 0
     for (const issue of issues) {
       const repository = repositoryOf(issue, projects)
-      if (
-        needle &&
-        !`#${issue.iid} ${issue.title} ${repository}`.toLocaleLowerCase().includes(needle)
-      )
-        continue
+      if (needle && !`#${issue.iid} ${issue.title}`.toLocaleLowerCase().includes(needle)) continue
       if (shown >= 50) break
       shown += 1
       byRepository.set(repository, [...(byRepository.get(repository) ?? []), issue])
@@ -1009,7 +1010,7 @@ function IssuePicker({
           <Input
             autoFocus
             aria-label="Buscar issue para vincular"
-            placeholder="Buscar por titulo, #numero ou repositorio..."
+            placeholder="Buscar por título ou #número…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="h-7 border-0 bg-transparent pl-6 text-xs shadow-none focus-visible:ring-0"
