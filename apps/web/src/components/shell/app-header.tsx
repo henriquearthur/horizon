@@ -53,27 +53,43 @@ export function AppHeader({
     if (!normalized) return []
     const contains = (value: string) => value.toLocaleLowerCase().includes(normalized)
     return [
-      ...issues.filter((issue) => contains(issue.title)).map((issue) => ({
-        key: `issue:${issue.projectId}:${issue.iid}`,
-        label: `#${issue.iid} ${issue.title}`,
-        type: 'Issue',
-        target: { kind: 'issue', projectId: issue.projectId, iid: issue.iid } as const,
-      })),
-      ...groups.filter((group) => contains(group.fullPath)).map((group) => ({
-        key: `group:${group.id}`,
-        label: group.fullPath,
-        type: group.fullPath.includes('/') ? 'Subgrupo' : 'Grupo',
-        target: { kind: 'group', path: group.fullPath } as const,
-      })),
-      ...projects.filter((project) => contains(`${project.namespace}/${project.path}`)).map((project) => ({
-        key: `project:${project.id}`,
-        label: `${project.namespace}/${project.path}`,
-        type: 'Projeto',
-        target: { kind: 'project', path: `${project.namespace}/${project.path}` } as const,
-      })),
+      ...issues
+        .filter((issue) => contains(issue.title))
+        .map((issue) => ({
+          key: `issue:${issue.projectId}:${issue.iid}`,
+          label: `#${issue.iid} ${issue.title}`,
+          type: 'Issue',
+          target: { kind: 'issue', projectId: issue.projectId, iid: issue.iid } as const,
+        })),
+      ...groups
+        .filter((group) => contains(group.fullPath))
+        .map((group) => ({
+          key: `group:${group.id}`,
+          label: group.fullPath,
+          type: group.fullPath.includes('/') ? 'Subgrupo' : 'Grupo',
+          target: { kind: 'group', path: group.fullPath } as const,
+        })),
+      ...projects
+        .filter((project) => contains(`${project.namespace}/${project.path}`))
+        .map((project) => ({
+          key: `project:${project.id}`,
+          label: `${project.namespace}/${project.path}`,
+          type: 'Projeto',
+          target: { kind: 'project', path: `${project.namespace}/${project.path}` } as const,
+        })),
       ...[
-        { key: 'action:inbox', label: 'Ir para Inbox', type: 'Ação', target: { kind: 'action', id: 'inbox' } as const },
-        { key: 'action:scope', label: 'Configurar escopo', type: 'Ação', target: { kind: 'action', id: 'scope' } as const },
+        {
+          key: 'action:inbox',
+          label: 'Ir para Inbox',
+          type: 'Ação',
+          target: { kind: 'action', id: 'inbox' } as const,
+        },
+        {
+          key: 'action:scope',
+          label: 'Configurar escopo',
+          type: 'Ação',
+          target: { kind: 'action', id: 'scope' } as const,
+        },
       ].filter((item) => contains(item.label)),
     ].slice(0, 12)
   }, [groups, issues, normalized, projects])
@@ -121,12 +137,28 @@ export function AppHeader({
           </Button>
         ) : null}
         {open && query ? (
-          <div role="listbox" aria-label="Resultados da busca global" className="absolute top-10 z-70 max-h-80 w-full overflow-auto rounded-xl border bg-popover p-1 shadow-lg">
-            {results.length ? results.map((result) => (
-              <button key={result.key} type="button" role="option" aria-selected="false" onClick={() => choose(result.target)} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-accent">
-                <span>{result.label}</span><span className="text-xs text-muted-foreground">{result.type}</span>
-              </button>
-            )) : <p className="px-3 py-4 text-sm text-muted-foreground">Nenhum resultado.</p>}
+          <div
+            role="listbox"
+            aria-label="Resultados da busca global"
+            className="absolute top-10 z-70 max-h-80 w-full overflow-auto rounded-xl border bg-popover p-1 shadow-lg"
+          >
+            {results.length ? (
+              results.map((result) => (
+                <button
+                  key={result.key}
+                  type="button"
+                  role="option"
+                  aria-selected="false"
+                  onClick={() => choose(result.target)}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-accent"
+                >
+                  <span>{result.label}</span>
+                  <span className="text-xs text-muted-foreground">{result.type}</span>
+                </button>
+              ))
+            ) : (
+              <p className="px-3 py-4 text-sm text-muted-foreground">Nenhum resultado.</p>
+            )}
           </div>
         ) : null}
       </div>

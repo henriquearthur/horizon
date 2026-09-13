@@ -173,22 +173,55 @@ export function InboxContent({
     () => new Map(snapshot.projects.map((project) => [project.id, project])),
     [snapshot.projects],
   )
-  const selectedIssues = useMemo(() => snapshot.issues.filter((i) => bulkSelection.has(issueKey(i))), [snapshot.issues, bulkSelection])
-  const toggleBulk = (issue: ProviderIssue) => setBulkSelection((current) => { const next = new Set(current); const key = issueKey(issue); if (next.has(key)) next.delete(key); else next.add(key); return next })
-  const runBulk = async (kind: 'status' | 'priority' | 'assignee' | 'label-add' | 'label-remove', value: string) => {
-    setBulkRunning(true); const results = new Map<string, boolean>()
-    await Promise.all(selectedIssues.map(async (issue) => { try {
-      if (kind === 'status' || kind === 'priority') await provider.updateIssueProperties(issue.projectId, issue.iid, { [kind]: value } as never)
-      else if (kind === 'assignee') await provider.updateIssue(issue.projectId, issue.iid, { assigneeIds: value === 'none' ? [] : [Number(value)] })
-      else {
-        const labels = kind === 'label-add'
-          ? [...new Set([...issue.labels, value])]
-          : issue.labels.filter((label) => label !== value)
-        await provider.updateIssue(issue.projectId, issue.iid, { labels })
+  const selectedIssues = useMemo(
+    () => snapshot.issues.filter((i) => bulkSelection.has(issueKey(i))),
+    [snapshot.issues, bulkSelection],
+  )
+  const toggleBulk = (issue: ProviderIssue) =>
+    setBulkSelection((current) => {
+      const next = new Set(current)
+      const key = issueKey(issue)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  const runBulk = async (
+    kind: 'status' | 'priority' | 'assignee' | 'label-add' | 'label-remove',
+    value: string,
+  ) => {
+    setBulkRunning(true)
+    const results = new Map<string, boolean>()
+    const queue = [...selectedIssues]
+    const worker = async () => {
+      while (queue.length) {
+        const issue = queue.shift()
+        if (!issue) return
+        try {
+          if (kind === 'status' || kind === 'priority')
+            await provider.updateIssueProperties(issue.projectId, issue.iid, {
+              [kind]: value,
+            } as never)
+          else if (kind === 'assignee')
+            await provider.updateIssue(issue.projectId, issue.iid, {
+              assigneeIds: value === 'none' ? [] : [Number(value)],
+            })
+          else {
+            const labels =
+              kind === 'label-add'
+                ? [...new Set([...issue.labels, value])]
+                : issue.labels.filter((label) => label !== value)
+            await provider.updateIssue(issue.projectId, issue.iid, { labels })
+          }
+          results.set(issueKey(issue), true)
+        } catch {
+          results.set(issueKey(issue), false)
+        }
       }
-      results.set(issueKey(issue), true)
-    } catch { results.set(issueKey(issue), false) } }))
-    setBulkResults(new Map(results)); setBulkRunning(false); await refresh()
+    }
+    await Promise.all(Array.from({ length: Math.min(4, selectedIssues.length) }, worker))
+    setBulkResults(new Map(results))
+    setBulkRunning(false)
+    await refresh()
   }
   const available = useMemo(() => {
     let issues = [...visibleIssueHierarchy(snapshot.issues)]
@@ -448,15 +481,80 @@ export function InboxContent({
         resultCount={`${issues.length} ${issues.length === 1 ? 'issue' : 'issues'}`}
         actions={
           <div className="flex items-center gap-1.5">
-            {selectedIssues.length ? <>
-              <span className="text-xs text-muted-foreground">{selectedIssues.length} selecionados</span>
-              <Select onValueChange={(v) => void runBulk('status', v)} disabled={bulkRunning}><SelectTrigger size="sm" aria-label="Status em massa"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{STATUS_VALUES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
-              <Select onValueChange={(v) => void runBulk('priority', v)} disabled={bulkRunning}><SelectTrigger size="sm" aria-label="Prioridade em massa"><SelectValue placeholder="Prioridade" /></SelectTrigger><SelectContent>{PRIORITY_VALUES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent></Select>
-              <Select onValueChange={(v) => void runBulk('assignee', v)} disabled={bulkRunning}><SelectTrigger size="sm" aria-label="Responsável em massa"><SelectValue placeholder="Responsável" /></SelectTrigger><SelectContent><SelectItem value="none">Sem responsável</SelectItem>{snapshot.users.map((u) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}</SelectContent></Select>
-              <Select onValueChange={(v) => void runBulk('label-add', v)} disabled={bulkRunning}><SelectTrigger size="sm" aria-label="Adicionar label em massa"><SelectValue placeholder="Adicionar label" /></SelectTrigger><SelectContent>{labels.map((label) => <SelectItem key={label} value={label}>{label}</SelectItem>)}</SelectContent></Select>
-              <Select onValueChange={(v) => void runBulk('label-remove', v)} disabled={bulkRunning}><SelectTrigger size="sm" aria-label="Remover label em massa"><SelectValue placeholder="Remover label" /></SelectTrigger><SelectContent>{labels.map((label) => <SelectItem key={label} value={label}>{label}</SelectItem>)}</SelectContent></Select>
-              <Button variant="ghost" size="xs" onClick={() => setBulkSelection(new Set())}>Limpar seleção</Button>
-            </> : null}
+            {selectedIssues.length ? (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {selectedIssues.length} selecionados
+                </span>
+                <Select onValueChange={(v) => void runBulk('status', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Status em massa">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_VALUES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('priority', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Prioridade em massa">
+                    <SelectValue placeholder="Prioridade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_VALUES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('assignee', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Responsável em massa">
+                    <SelectValue placeholder="Responsável" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem responsável</SelectItem>
+                    {snapshot.users.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('label-add', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Adicionar label em massa">
+                    <SelectValue placeholder="Adicionar label" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labels.map((label) => (
+                      <SelectItem key={label} value={label}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  onValueChange={(v) => void runBulk('label-remove', v)}
+                  disabled={bulkRunning}
+                >
+                  <SelectTrigger size="sm" aria-label="Remover label em massa">
+                    <SelectValue placeholder="Remover label" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labels.map((label) => (
+                      <SelectItem key={label} value={label}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="xs" onClick={() => setBulkSelection(new Set())}>
+                  Limpar seleção
+                </Button>
+              </>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="xs" className="text-muted-foreground">

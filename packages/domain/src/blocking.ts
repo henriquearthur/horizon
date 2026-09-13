@@ -18,7 +18,9 @@ const key = (projectId: number, iid: number) => `${projectId}:${iid}`
 const pattern = /^horizon::blocks::(\d+):(\d+)::(\d+):(\d+)$/
 
 /** Derives both directions and flags references absent from the readable scope. */
-export const blockingReferences = (issues: readonly ProviderIssue[]): readonly BlockingReference[] => {
+export const blockingReferences = (
+  issues: readonly ProviderIssue[],
+): readonly BlockingReference[] => {
   const byKey = new Map(issues.map((issue) => [key(issue.projectId, issue.iid), issue]))
   const result: BlockingReference[] = []
   for (const issue of issues) {
@@ -41,8 +43,18 @@ export const blockingReferences = (issues: readonly ProviderIssue[]): readonly B
   return result
 }
 
-export const blocks = (issue: ProviderIssue, issues: readonly ProviderIssue[]): readonly BlockingReference[] =>
-  blockingReferences(issues).filter((reference) => reference.source === key(issue.projectId, issue.iid))
+export const blocks = (
+  issue: ProviderIssue,
+  issues: readonly ProviderIssue[],
+): readonly BlockingReference[] =>
+  blockingReferences(issues).filter(
+    (reference) => reference.source === key(issue.projectId, issue.iid),
+  )
 
-export const blockedBy = (issue: ProviderIssue, issues: readonly ProviderIssue[]): readonly BlockingReference[] =>
-  blockingReferences(issues).filter((reference) => reference.target === key(issue.projectId, issue.iid))
+export const blockedBy = (
+  issue: ProviderIssue,
+  issues: readonly ProviderIssue[],
+): readonly BlockingReference[] =>
+  blockingReferences(issues).filter(
+    (reference) => reference.target === key(issue.projectId, issue.iid),
+  )

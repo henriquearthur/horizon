@@ -220,14 +220,16 @@ export function IssueDetailPanel({
             </h2>
           )}
 
-          <div className="mb-3 flex flex-wrap gap-1.5"><TypeBadge types={types} />
-          {shownLabels.length ? (
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {shownLabels.map((label) => (
-                <LabelChip key={label} label={label} />
-              ))}
-            </div>
-          ) : null}</div>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <TypeBadge types={types} />
+            {shownLabels.length ? (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {shownLabels.map((label) => (
+                  <LabelChip key={label} label={label} />
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-1 rounded-full border border-input bg-background pr-3 pl-1">

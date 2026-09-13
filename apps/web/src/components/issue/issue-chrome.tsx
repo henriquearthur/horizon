@@ -40,8 +40,20 @@ export function LabelOverflow({ count }: { count: number }) {
 
 export function TypeBadge({ types, className }: { types: readonly string[]; className?: string }) {
   const conflict = types.length > 1
-  const label = conflict ? '⚠ conflito' : types[0] ?? 'Sem tipo'
-  return <span title={conflict ? `Tipos conflitantes: ${types.join(', ')}` : label} aria-label={conflict ? 'Tipos conflitantes' : label} className={cn('inline-flex h-[18px] items-center rounded-full bg-primary/12 px-2 text-[10px] font-medium text-primary', conflict && 'bg-destructive/15 text-destructive', className)}>{label}</span>
+  const label = conflict ? '⚠ conflito' : (types[0] ?? 'Sem tipo')
+  return (
+    <span
+      title={conflict ? `Tipos conflitantes: ${types.join(', ')}` : label}
+      aria-label={conflict ? 'Tipos conflitantes' : label}
+      className={cn(
+        'inline-flex h-[18px] items-center rounded-full bg-primary/12 px-2 text-[10px] font-medium text-primary',
+        conflict && 'bg-destructive/15 text-destructive',
+        className,
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 export function StatusDot({

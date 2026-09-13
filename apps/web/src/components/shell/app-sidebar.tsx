@@ -40,8 +40,29 @@ export interface AppSidebarProps {
   readonly onToggleFavorite?: (viewParam: string) => void
 }
 
-function FavoriteButton({ item, favorite, onToggle }: { item: SidebarItem; favorite: boolean; onToggle: (viewParam: string) => void }) {
-  return <button type="button" aria-label={`${favorite ? 'Desfavoritar' : 'Favoritar'} ${item.label}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onToggle(item.viewParam) }} className="ml-1 rounded p-1 text-muted-foreground/60 hover:bg-hover hover:text-foreground"><Star aria-hidden className={cn('size-3', favorite && 'fill-current text-amber-500')} /></button>
+function FavoriteButton({
+  item,
+  favorite,
+  onToggle,
+}: {
+  item: SidebarItem
+  favorite: boolean
+  onToggle: (viewParam: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${favorite ? 'Desfavoritar' : 'Favoritar'} ${item.label}`}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onToggle(item.viewParam)
+      }}
+      className="ml-1 rounded p-1 text-muted-foreground/60 hover:bg-hover hover:text-foreground"
+    >
+      <Star aria-hidden className={cn('size-3', favorite && 'fill-current text-amber-500')} />
+    </button>
+  )
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -107,7 +128,17 @@ function ViewRow({ item, active }: { item: SidebarItem; active: boolean }) {
   )
 }
 
-function ProjectRow({ item, active, favorite, onToggle }: { item: SidebarItem; active: boolean; favorite?: boolean | undefined; onToggle?: ((viewParam: string) => void) | undefined }) {
+function ProjectRow({
+  item,
+  active,
+  favorite,
+  onToggle,
+}: {
+  item: SidebarItem
+  active: boolean
+  favorite?: boolean | undefined
+  onToggle?: ((viewParam: string) => void) | undefined
+}) {
   return (
     <Link
       to="."
@@ -122,7 +153,9 @@ function ProjectRow({ item, active, favorite, onToggle }: { item: SidebarItem; a
       />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       <Count value={item.count} active={active} />
-      {onToggle ? <FavoriteButton item={item} favorite={Boolean(favorite)} onToggle={onToggle} /> : null}
+      {onToggle ? (
+        <FavoriteButton item={item} favorite={Boolean(favorite)} onToggle={onToggle} />
+      ) : null}
     </Link>
   )
 }
@@ -169,20 +202,34 @@ function GroupRow({
           <Folder aria-hidden className="size-3 flex-none opacity-60" />
           <span className="min-w-0 flex-1 truncate">{group.label}/</span>
           <Count value={group.count} active={active} />
-          {onToggleFavorite ? <FavoriteButton item={{ viewParam: group.viewParam, label: `${group.label}/` }} favorite={favorites?.includes(group.viewParam) ?? false} onToggle={onToggleFavorite} /> : null}
+          {onToggleFavorite ? (
+            <FavoriteButton
+              item={{ viewParam: group.viewParam, label: `${group.label}/` }}
+              favorite={favorites?.includes(group.viewParam) ?? false}
+              onToggle={onToggleFavorite}
+            />
+          ) : null}
         </Link>
       </div>
       {open && hasChildren ? (
         <div className="animate-rise ml-[21px] border-l border-sidebar-border/70 pl-1">
           {group.groups.map((child) => (
-            <GroupRow key={child.path} group={child} activeView={activeView} depth={depth + 1} favorites={favorites} onToggleFavorite={onToggleFavorite} />
+            <GroupRow
+              key={child.path}
+              group={child}
+              activeView={activeView}
+              depth={depth + 1}
+              favorites={favorites}
+              onToggleFavorite={onToggleFavorite}
+            />
           ))}
           {group.projects.map((project) => (
             <ProjectRow
               key={project.viewParam}
               item={project}
               active={project.viewParam === activeView}
-              favorite={favorites?.includes(project.viewParam)} onToggle={onToggleFavorite}
+              favorite={favorites?.includes(project.viewParam)}
+              onToggle={onToggleFavorite}
             />
           ))}
         </div>
@@ -207,9 +254,16 @@ export function AppSidebar({
     ? standaloneProjects
     : standaloneProjects.filter((project) => Number(project.count) > 0)
   const allItems: SidebarItem[] = []
-  const collect = (group: SidebarGroupItem) => { allItems.push({ viewParam: group.viewParam, label: `${group.label}/`, icon: '▰' }); group.groups.forEach(collect); allItems.push(...group.projects) }
-  groups.forEach(collect); allItems.push(...standaloneProjects)
-  const favoriteItems = favorites.map((viewParam) => allItems.find((item) => item.viewParam === viewParam)).filter((item): item is SidebarItem => Boolean(item))
+  const collect = (group: SidebarGroupItem) => {
+    allItems.push({ viewParam: group.viewParam, label: `${group.label}/`, icon: '▰' })
+    group.groups.forEach(collect)
+    allItems.push(...group.projects)
+  }
+  groups.forEach(collect)
+  allItems.push(...standaloneProjects)
+  const favoriteItems = favorites
+    .map((viewParam) => allItems.find((item) => item.viewParam === viewParam))
+    .filter((item): item is SidebarItem => Boolean(item))
   return (
     <nav
       aria-label="Navegação do Horizon"
@@ -227,8 +281,17 @@ export function AppSidebar({
       {savedViews.length === 0 ? <Hint>Aplique filtros e salve para criar uma view.</Hint> : null}
 
       <SectionLabel>Favoritos</SectionLabel>
-      {favoriteItems.map((item) => <div key={item.viewParam} className="flex items-center"><div className="min-w-0 flex-1"><ViewRow item={item} active={item.viewParam === activeView} /></div><FavoriteButton item={item} favorite onToggle={onToggleFavorite ?? (() => {})} /></div>)}
-      {favoriteItems.length === 0 ? <Hint>Favorite grupos e projetos para acesso rápido.</Hint> : null}
+      {favoriteItems.map((item) => (
+        <div key={item.viewParam} className="flex items-center">
+          <div className="min-w-0 flex-1">
+            <ViewRow item={item} active={item.viewParam === activeView} />
+          </div>
+          <FavoriteButton item={item} favorite onToggle={onToggleFavorite ?? (() => {})} />
+        </div>
+      ))}
+      {favoriteItems.length === 0 ? (
+        <Hint>Favorite grupos e projetos para acesso rápido.</Hint>
+      ) : null}
 
       <SectionLabel>Grupos</SectionLabel>
       {groups.length > 0 || standaloneProjects.length > 0 ? (
@@ -242,14 +305,22 @@ export function AppSidebar({
         </label>
       ) : null}
       {visibleGroups.map((group) => (
-        <GroupRow key={group.path} group={group} activeView={activeView} depth={0} favorites={favorites} onToggleFavorite={onToggleFavorite} />
+        <GroupRow
+          key={group.path}
+          group={group}
+          activeView={activeView}
+          depth={0}
+          favorites={favorites}
+          onToggleFavorite={onToggleFavorite}
+        />
       ))}
       {visibleStandaloneProjects.map((project) => (
         <ProjectRow
           key={project.viewParam}
           item={project}
           active={project.viewParam === activeView}
-          favorite={favorites?.includes(project.viewParam)} onToggle={onToggleFavorite}
+          favorite={favorites?.includes(project.viewParam)}
+          onToggle={onToggleFavorite}
         />
       ))}
       {groups.length === 0 && standaloneProjects.length === 0 ? (

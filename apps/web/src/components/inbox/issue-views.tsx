@@ -23,7 +23,8 @@ import {
   projectPath,
   relativeTime,
   absoluteTime,
-  visibleLabels, issueTypes,
+  visibleLabels,
+  issueTypes,
 } from '~/lib/issue-presentation'
 import { cn } from '~/lib/utils'
 
@@ -87,7 +88,15 @@ function IssueMeta({
       {path ? <span className="truncate">{path}</span> : null}
       {code ? <span className="flex-none font-medium text-muted-foreground/90">{code}</span> : null}
       {issue.parentIid !== undefined ? (
-        <span className="flex-none">filho de #{issue.parentIid}</span>
+        <a
+          className="flex-none underline decoration-muted-foreground/40 underline-offset-2 hover:text-foreground"
+          href={issue.webUrl.replace(/\/issues\/\d+(?:$|[?#])/, `/issues/${issue.parentIid}`)}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          filho de #{issue.parentIid}
+        </a>
       ) : null}
       {created ? (
         <>
@@ -196,7 +205,16 @@ function IssueRow({
             : 'before:opacity-0 hover:bg-hover focus-visible:bg-hover',
         )}
       >
-        {onToggleSelect ? <input type="checkbox" aria-label={`Selecionar ${issue.title}`} checked={bulkSelected} onChange={onToggleSelect} onClick={(e) => e.stopPropagation()} className="mt-1 size-3.5" /> : null}
+        {onToggleSelect ? (
+          <input
+            type="checkbox"
+            aria-label={`Selecionar ${issue.title}`}
+            checked={bulkSelected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1 size-3.5"
+          />
+        ) : null}
         {onStatusChange ? (
           <IssueStatusMenu
             status={properties.status}
@@ -294,7 +312,16 @@ function IssueCard({
       )}
     >
       <div className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted-foreground">
-        {onToggleSelect ? <input type="checkbox" aria-label={`Selecionar ${issue.title}`} checked={bulkSelected} onChange={onToggleSelect} onClick={(e) => e.stopPropagation()} className="size-3.5" /> : null}
+        {onToggleSelect ? (
+          <input
+            type="checkbox"
+            aria-label={`Selecionar ${issue.title}`}
+            checked={bulkSelected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="size-3.5"
+          />
+        ) : null}
         {onStatusChange ? (
           <IssueStatusMenu
             status={properties.status}

@@ -40,25 +40,53 @@ export interface InitiativeStore {
 /** Small persistent-catalog seam; production can provide a database-backed store. */
 export class MemoryInitiativeStore implements InitiativeStore {
   #items = new Map<string, Initiative>()
-  async list() { return [...this.#items.values()] }
-  async get(id: string) { return this.#items.get(id) }
-  async put(value: Initiative) { this.#items.set(value.id, value); return value }
-  async remove(id: string) { this.#items.delete(id) }
+  async list() {
+    return [...this.#items.values()]
+  }
+  async get(id: string) {
+    return this.#items.get(id)
+  }
+  async put(value: Initiative) {
+    this.#items.set(value.id, value)
+    return value
+  }
+  async remove(id: string) {
+    this.#items.delete(id)
+  }
 }
 
 export class InitiativeCatalog {
   constructor(private readonly store: InitiativeStore = new MemoryInitiativeStore()) {}
-  list() { return this.store.list() }
-  get(id: string) { return this.store.get(id) }
+  list() {
+    return this.store.list()
+  }
+  get(id: string) {
+    return this.store.get(id)
+  }
   async create(input: InitiativeInput, id = crypto.randomUUID()): Promise<Initiative> {
     const now = new Date().toISOString()
-    return this.store.put({ id, name: input.name.trim(), description: input.description.trim(), state: input.state, createdAt: now, updatedAt: now })
+    return this.store.put({
+      id,
+      name: input.name.trim(),
+      description: input.description.trim(),
+      state: input.state,
+      createdAt: now,
+      updatedAt: now,
+    })
   }
   async update(id: string, changes: Partial<InitiativeInput>): Promise<Initiative> {
     const current = await this.store.get(id)
     if (!current) throw new Error('Iniciativa não encontrada.')
-    const next = { ...current, ...changes, ...(changes.name !== undefined ? { name: changes.name.trim() } : {}), ...(changes.description !== undefined ? { description: changes.description.trim() } : {}), updatedAt: new Date().toISOString() }
+    const next = {
+      ...current,
+      ...changes,
+      ...(changes.name !== undefined ? { name: changes.name.trim() } : {}),
+      ...(changes.description !== undefined ? { description: changes.description.trim() } : {}),
+      updatedAt: new Date().toISOString(),
+    }
     return this.store.put(next)
   }
-  remove(id: string) { return this.store.remove(id) }
+  remove(id: string) {
+    return this.store.remove(id)
+  }
 }
