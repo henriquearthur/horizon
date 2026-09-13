@@ -3,7 +3,7 @@ import {
   PRIORITY_VALUES,
   STATUS_VALUES,
   filterIssues,
-  isIssueVisible,
+  visibleIssueHierarchy,
   groupIssues,
   readIssueProperties,
   searchIssues,
@@ -171,7 +171,7 @@ export function InboxContent({
     [snapshot.projects],
   )
   const available = useMemo(() => {
-    let issues = snapshot.issues.filter((issue) => isIssueVisible(issue))
+    let issues = [...visibleIssueHierarchy(snapshot.issues)]
     if (view._tag === 'Project')
       issues = issues.filter((issue) => {
         const project = projectById.get(issue.projectId)

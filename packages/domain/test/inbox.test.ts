@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { filterIssues, groupIssues, sortIssues, type ProviderIssue } from '../src/index.ts'
+import {
+  filterIssues,
+  groupIssues,
+  sortIssues,
+  visibleIssueHierarchy,
+  type ProviderIssue,
+} from '../src/index.ts'
 
 const issue = (id: number, labels: readonly string[]): ProviderIssue => ({
   id,
@@ -13,6 +19,20 @@ const issue = (id: number, labels: readonly string[]): ProviderIssue => ({
 })
 
 describe('Inbox grouping', () => {
+  it('keeps an old closed parent and all direct children while one child is open', () => {
+    const old = '2026-01-01T00:00:00Z'
+    const parent = { ...issue(1, []), state: 'closed' as const, closedAt: old }
+    const openChild = { ...issue(2, []), parentIid: 1 }
+    const oldChild = { ...issue(3, []), parentIid: 1, state: 'closed' as const, closedAt: old }
+    const unrelated = { ...issue(4, []), state: 'closed' as const, closedAt: old }
+
+    expect(
+      visibleIssueHierarchy(
+        [parent, openChild, oldChild, unrelated],
+        Date.parse('2026-02-01T00:00:00Z'),
+      ),
+    ).toEqual([parent, openChild, oldChild])
+  })
   it('groups structured Horizon properties including their defaults and conflicts', () => {
     const issues = [
       issue(1, []),
