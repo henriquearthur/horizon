@@ -31,8 +31,8 @@ describe('readStoredTheme', () => {
     ).toBe(DEFAULT_THEME)
   })
 
-  it('defaults to dark, like the prototype', () => {
-    expect(DEFAULT_THEME).toBe('dark')
+  it('defaults to light mode', () => {
+    expect(DEFAULT_THEME).toBe('light')
   })
 })
 
@@ -96,20 +96,20 @@ describe('ThemeProvider', () => {
 
   it('toggles, applies and persists the theme', async () => {
     const user = userEvent.setup()
-    document.documentElement.setAttribute('data-theme', 'dark')
+    document.documentElement.setAttribute('data-theme', 'light')
     render(
       <ThemeProvider>
         <ThemeProbe />
       </ThemeProvider>,
     )
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.dataset.theme).toBe('light')
 
     await act(async () => {
       await user.click(screen.getByRole('button'))
     })
 
-    expect(document.documentElement.dataset.theme).toBe('light')
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light')
-    expect(screen.getByRole('button')).toHaveTextContent('light')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
+    expect(screen.getByRole('button')).toHaveTextContent('dark')
   })
 })

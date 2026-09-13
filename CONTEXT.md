@@ -21,6 +21,12 @@ The groups and projects the user picked out of the Conexão. Everything Horizon
 shows is restricted to the Escopo. A group may be tracked dynamically, so
 projects created later join the Escopo on their own.
 
+## Sub-issue
+
+A work item the Provider links under another Issue — a GitLab child item. A
+sub-issue never shows twice: in the list and in the Kanban it hangs under its
+parent, and the parent carries the `concluídos/total` roll-up.
+
 ## Issue
 
 An issue in the Provider. The Provider is canonical: Horizon caches issues and

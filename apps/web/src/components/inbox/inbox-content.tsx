@@ -22,7 +22,7 @@ import {
 } from '@horizon/domain'
 import { ArrowUpDown, Bookmark, Group, Plus, RefreshCw, X } from 'lucide-react'
 import { FilterMenu, type FilterDefinition } from './filter-menu'
-import { IssueViews } from './issue-views'
+import { IssueViews, issueKey } from './issue-views'
 import { IssueCreateForm, IssueDetailPanel } from '~/components/issue/issue-detail-panel'
 import { LabelChip, PriorityBadge, StatusDot, UserAvatar } from '~/components/issue/issue-chrome'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
@@ -97,8 +97,13 @@ export function InboxContent({
   const [filters, setFilters] = useState<InboxFilters>({})
   const [sort, setSort] = useState<InboxSort>('updated')
   const [group, setGroup] = useState<InboxGroup>('project')
-  const [selected, setSelected] = useState<ProviderIssue>()
   const [comments, setComments] = useState<readonly ProviderComment[]>([])
+  /**
+   * The open Issue lives in the URL. This holds the choice just made, until the
+   * router catches up — without it, closing the Detail would be undone by the
+   * `issue` param of the render that is still in flight.
+   */
+  const [pendingRef, setPendingRef] = useState<{ readonly value: string | undefined }>()
   const [detailError, setDetailError] = useState<string>()
   const [detailLoading, setDetailLoading] = useState(false)
   const detailRequest = useRef(0)
@@ -196,7 +201,45 @@ export function InboxContent({
       : found
     return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
-  const grouped = useMemo(() => groupIssues(issues, group), [group, issues])
+  /**
+   * A sub-issue is shown under its parent, never twice: when both are in the
+   * result set the child leaves the top level and hangs under the parent.
+   */
+  const childrenOf = useMemo(() => {
+    const map = new Map<string, ProviderIssue[]>()
+    for (const issue of issues) {
+      if (issue.parentIid === undefined) continue
+      const parent = `${issue.projectId}:${issue.parentIid}`
+      map.set(parent, [...(map.get(parent) ?? []), issue])
+    }
+    return map
+  }, [issues])
+  const roots = useMemo(() => {
+    const present = new Set(issues.map((issue) => issueKey(issue)))
+    return issues.filter(
+      (issue) =>
+        issue.parentIid === undefined || !present.has(`${issue.projectId}:${issue.parentIid}`),
+    )
+  }, [issues])
+  const grouped = useMemo(() => groupIssues(roots, group), [group, roots])
+
+  const openRef = pendingRef ? pendingRef.value : issueRef
+
+  /** The open Issue is whatever the URL points at, so closing it is just a navigation. */
+  const selected = useMemo(() => {
+    if (!openRef) return undefined
+    const [projectId = NaN, iid = NaN] = openRef.split(':').map(Number)
+    return snapshot.issues.find((issue) => issue.projectId === projectId && issue.iid === iid)
+  }, [openRef, snapshot.issues])
+  const selectedChildren = useMemo(
+    () =>
+      selected
+        ? snapshot.issues.filter(
+            (issue) => issue.projectId === selected.projectId && issue.parentIid === selected.iid,
+          )
+        : [],
+    [selected, snapshot.issues],
+  )
   const issueHref = (iid: number) =>
     horizonIssueHref(
       {
@@ -306,49 +349,52 @@ export function InboxContent({
 
   const hasFilters = Object.keys(filters).length > 0
 
-  const openIssue = async (issue: ProviderIssue) => {
-    setSelected(issue)
-    onIssueSelected?.(`${issue.projectId}:${issue.iid}`)
+  const showIssue = (value: string | undefined) => {
+    setPendingRef({ value })
+    onIssueSelected?.(value)
+  }
+  const openIssue = (issue: ProviderIssue) => showIssue(issueKey(issue))
+
+  // Once the URL carries the choice, the URL is in charge again.
+  useEffect(() => setPendingRef(undefined), [issueRef])
+
+  // The discussion follows the Issue in the URL: opening, switching and closing
+  // are all the same navigation.
+  useEffect(() => {
     setComments([])
     setDetailError(undefined)
+    if (!openRef) {
+      setDetailLoading(false)
+      return
+    }
+    const [projectId = NaN, iid = NaN] = openRef.split(':').map(Number)
+    if (!Number.isInteger(projectId) || !Number.isInteger(iid)) return
     const requestId = ++detailRequest.current
     setDetailLoading(true)
-    try {
-      setComments(await provider.listComments(issue.projectId, issue.iid))
-    } catch (cause) {
-      setDetailError(
-        cause instanceof Error ? cause.message : 'Não foi possível carregar a discussão.',
-      )
-    } finally {
-      if (detailRequest.current === requestId) setDetailLoading(false)
+    let active = true
+    void provider
+      .listComments(projectId, iid)
+      .then((loaded) => {
+        if (active) setComments(loaded)
+      })
+      .catch((cause: unknown) => {
+        if (active)
+          setDetailError(
+            cause instanceof Error ? cause.message : 'Não foi possível carregar a discussão.',
+          )
+      })
+      .finally(() => {
+        if (active && detailRequest.current === requestId) setDetailLoading(false)
+      })
+    return () => {
+      active = false
     }
-  }
-
-  useEffect(() => {
-    setSelected(undefined)
-    setComments([])
-  }, [
-    view._tag,
-    view._tag === 'Group' || view._tag === 'Project' ? view.path : view.id,
-    mode,
-    query,
-  ])
-
-  useEffect(() => {
-    if (!issueRef) return
-    const [projectId, iid] = issueRef.split(':').map(Number)
-    if (selected?.projectId === projectId && selected?.iid === iid) return
-    const target = snapshot.issues.find(
-      (issue) => issue.projectId === projectId && issue.iid === iid,
-    )
-    if (target) void openIssue(target)
-  }, [issueRef, selected?.id, snapshot.issues])
+  }, [openRef, provider])
 
   const changeStatus = async (issue: ProviderIssue, status: IssueStatus) => {
     setDetailError(undefined)
     try {
-      const updated = await provider.updateIssueProperties(issue.projectId, issue.iid, { status })
-      if (selected?.id === updated.id) setSelected(updated)
+      await provider.updateIssueProperties(issue.projectId, issue.iid, { status })
     } catch (cause) {
       setDetailError(cause instanceof Error ? cause.message : 'Não foi possível mover o issue.')
     }
@@ -522,9 +568,10 @@ export function InboxContent({
         ) : (
           <IssueViews
             mode={mode}
-            issues={issues}
+            issues={roots}
             projects={snapshot.projects}
             groups={grouped}
+            childrenOf={childrenOf}
             onOpen={openIssue}
             selectedId={selected?.id}
             onStatusChange={(issue, status) => void changeStatus(issue, status)}
@@ -572,7 +619,7 @@ export function InboxContent({
                   .filter((label) => !label.startsWith('horizon::'))}
                 onCreated={(issue) => {
                   setCreating(false)
-                  void openIssue(issue)
+                  openIssue(issue)
                 }}
               />
             ) : null}
@@ -583,17 +630,16 @@ export function InboxContent({
             issue={selected}
             comments={comments}
             provider={provider}
-            onClose={() => {
-              setSelected(undefined)
-              onIssueSelected?.(undefined)
-            }}
-            onUpdated={setSelected}
+            onClose={() => showIssue(undefined)}
+            subIssues={selectedChildren}
+            onOpenIssue={openIssue}
             onCommentCreated={(comment) => setComments((current) => [...current, comment])}
             users={snapshot.users}
             currentUser={snapshot.connection.user}
             loading={detailLoading}
             availableLabels={labels}
             issueHref={issueHref}
+            onIssueSelect={(iid) => showIssue(`${selected.projectId}:${iid}`)}
           />
         ) : null}
         {detailError ? (

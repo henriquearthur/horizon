@@ -45,9 +45,11 @@ export function ScopeDialog({
     void loadCatalog()
   }, [loadCatalog])
 
+  // Opening the modal reuses the warm catalog: groups and projects move slowly
+  // and re-reading them costs a dozen round trips on a large instance.
   useEffect(() => {
-    if (open) void loadCatalog(true)
-  }, [open, loadCatalog])
+    if (open && !catalog) void loadCatalog()
+  }, [open, catalog, loadCatalog])
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
@@ -56,8 +58,11 @@ export function ScopeDialog({
     try {
       const saved = await saveSetupScope({ data: { ...scope, followGroups: scope.groups } })
       setCatalog((current) => (current ? { ...current, scope: saved } : current))
-      await runtime.refresh({ force: true, throwOnError: true })
       onOpenChange(false)
+      // Saving the Escopo already dropped the cached Issues on the server, so
+      // the Inbox reloads on its own. Waiting here would keep the modal on
+      // "Salvando…" for as long as GitLab takes to read hundreds of projects.
+      void runtime.refresh()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
     } finally {

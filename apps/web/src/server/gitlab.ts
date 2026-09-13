@@ -3,6 +3,7 @@ import {
   GitLabReadProvider,
   GitLabWriteProvider,
   readAllPages,
+  readAllPagesFast,
   selectedGroups,
   selectedProjects,
   type ProviderGroup,
@@ -40,7 +41,15 @@ const credentials = () => {
   return value
 }
 
-export const reader = (): ProviderReadContract => new GitLabReadProvider(credentials())
+/**
+ * Reads run against a whole Escopo — hundreds of repositories on the GitLab
+ * institucional — so they get a wider gate than the default. Writes keep the
+ * conservative one.
+ */
+const READ_HTTP = { maxConcurrency: 16, minIntervalMs: 15 }
+
+export const reader = (): ProviderReadContract =>
+  new GitLabReadProvider(credentials(), fetch, READ_HTTP)
 export const writer = (): ProviderWriteContract => new GitLabWriteProvider(credentials())
 
 /** The GitLab account behind the token. Used by the "Atribuídos a mim" View. */
@@ -62,47 +71,78 @@ export interface ProviderCatalog {
 const catalogCache = new TimedCache<ProviderCatalog>(CATALOG_TTL_MS, async () => {
   const provider = reader()
   const [groups, projects] = await Promise.all([
-    readAllPages((page) => provider.listGroups(page)),
-    readAllPages((page) => provider.listProjects(page)),
+    readAllPagesFast((page) => provider.listGroups(page)),
+    readAllPagesFast((page) => provider.listProjects(page)),
   ])
   log('gitlab.catalog.loaded', { groups: groups.length, projects: projects.length })
   return { groups, projects }
 })
 
-interface ProjectMetadata {
+export interface ProjectMetadata {
   readonly users: readonly ProviderUser[]
   readonly labels: readonly ProviderLabel[]
-  readonly projectIds: readonly number[]
 }
 
-/** Members and labels of the Escopo — needed by the forms, rarely changing. */
-const metadataCache = new TimedCache<ProjectMetadata>(CATALOG_TTL_MS, async () => {
-  const provider = reader()
-  const projects = await scopedProjects()
-  const users = new Map<number, ProviderUser>()
-  const labels = new Map<string, ProviderLabel>()
-  for (const project of projects) {
-    // Sequential on purpose: the shared HTTP gate already paces the calls, and
-    // a fan-out over dozens of projects is what used to trip GitLab's limiter.
-    for (const user of await readAllPages((page) => provider.listUsers(project.id, page)))
-      users.set(user.id, user)
-    for (const label of await readAllPages((page) => provider.listLabels(project.id, page)))
-      labels.set(label.name, label)
-  }
-  return {
-    users: [...users.values()],
-    labels: [...labels.values()],
-    projectIds: projects.map((project) => project.id),
-  }
-})
+const metadataByProject = new Map<number, TimedCache<ProjectMetadata>>()
+
+/**
+ * Members and labels of one project. Only the forms need them, so they are
+ * read on demand: reading them for every project of the Escopo used to cost
+ * two GitLab calls per repository on every snapshot.
+ */
+export const projectMetadata = (projectId: number): Promise<ProjectMetadata> => {
+  const existing = metadataByProject.get(projectId)
+  if (existing) return existing.get()
+  const cache = new TimedCache<ProjectMetadata>(CATALOG_TTL_MS, async () => {
+    const provider = reader()
+    const [users, labels] = await Promise.all([
+      readAllPages((page) => provider.listUsers(projectId, page)),
+      readAllPages((page) => provider.listLabels(projectId, page)),
+    ])
+    return { users, labels }
+  })
+  metadataByProject.set(projectId, cache)
+  return cache.get()
+}
 
 const issuesCache = new TimedCache<readonly ProviderIssue[]>(ISSUES_TTL_MS, async () => {
   const provider = reader()
   const projects = await scopedProjects()
-  const issues: ProviderIssue[] = []
-  for (const project of projects)
-    issues.push(...(await readAllPages((page) => provider.listIssues(project.id, page))))
-  log('gitlab.issues.loaded', { projects: projects.length, issues: issues.length })
+  const started = Date.now()
+  // The shared HTTP gate paces the calls, so asking for every project at once
+  // is what actually keeps a large Escopo readable in seconds.
+  const perProject = await Promise.all(
+    projects.map(async (project) => ({
+      project,
+      issues: await readAllPagesFast((page) => provider.listIssues(project.id, page)),
+    })),
+  )
+  const withIssues = perProject.filter((entry) => entry.issues.length)
+  const hierarchy = await provider
+    .readHierarchy?.(
+      withIssues.map((entry) => ({
+        id: entry.project.id,
+        fullPath: `${entry.project.namespace}/${entry.project.path}`,
+      })),
+    )
+    .catch((error: unknown) => {
+      logError('gitlab.hierarchy.failed', error)
+      return undefined
+    })
+  const issues = withIssues.flatMap((entry) => {
+    const links = hierarchy?.get(entry.project.id)
+    if (!links) return entry.issues
+    return entry.issues.map((issue) => ({
+      ...issue,
+      ...(links.parentOf.has(issue.iid) ? { parentIid: links.parentOf.get(issue.iid)! } : {}),
+      ...(links.withChildren.has(issue.iid) ? { hasChildren: true } : {}),
+    }))
+  })
+  log('gitlab.issues.loaded', {
+    projects: projects.length,
+    issues: issues.length,
+    durationMs: Date.now() - started,
+  })
   return issues
 })
 
@@ -123,6 +163,22 @@ export interface ProviderSnapshot {
 
 let scopeGeneration = 0
 
+/** Everyone the Escopo mentions, so the filters can name people without extra reads. */
+const peopleOf = (issues: readonly ProviderIssue[]): readonly ProviderUser[] => {
+  const users = new Map<number, ProviderUser>()
+  for (const issue of issues) {
+    if (issue.author) users.set(issue.author.id, issue.author)
+    for (const assignee of issue.assignees) users.set(assignee.id, assignee)
+  }
+  return [...users.values()]
+}
+
+const labelsOf = (issues: readonly ProviderIssue[]): readonly ProviderLabel[] =>
+  [...new Set(issues.flatMap((issue) => issue.labels))].map((name, index) => ({
+    id: index + 1,
+    name,
+  }))
+
 /** One consistent read of everything the shell needs, cached per TTL. */
 export const providerSnapshot = async (force = false): Promise<ProviderSnapshot> => {
   const generation = scopeGeneration
@@ -134,14 +190,7 @@ export const providerSnapshot = async (force = false): Promise<ProviderSnapshot>
     scopeStore.getScope(),
   ])
   const projects = selectedProjects(catalog.projects, scope)
-  const [issues, metadata] = await Promise.all([
-    issuesCache.get({ force }),
-    metadataCache.get({ force }).catch((error: unknown) => {
-      // Members and labels only enrich the forms: never fail the Inbox for them.
-      logError('gitlab.metadata.failed', error)
-      return { users: [], labels: [], projectIds: [] } satisfies ProjectMetadata
-    }),
-  ])
+  const issues = await issuesCache.get({ force })
   if (generation !== scopeGeneration) return providerSnapshot()
   log('gitlab.snapshot', { issues: issues.length, durationMs: Date.now() - started, force })
   return {
@@ -150,8 +199,8 @@ export const providerSnapshot = async (force = false): Promise<ProviderSnapshot>
     groups: selectedGroups(catalog.groups, scope),
     projects,
     issues,
-    users: metadata.users,
-    labels: metadata.labels,
+    users: peopleOf(issues),
+    labels: labelsOf(issues),
   }
 }
 
@@ -168,5 +217,4 @@ export const invalidateIssues = (): void => issuesCache.invalidate()
 export const invalidateScopedReads = (): void => {
   scopeGeneration += 1
   issuesCache.invalidate()
-  metadataCache.invalidate()
 }

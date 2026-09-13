@@ -26,6 +26,14 @@ export const getRuntimeSnapshot = createServerFn({ method: 'GET' })
   }))
   .handler(({ data }) => runtime.snapshot(data))
 
+export const getProjectMetadata = createServerFn({ method: 'GET' })
+  .validator((input): { projectId: number } => {
+    const value = record(input)
+    if (!Number.isInteger(value.projectId)) throw new Error('Projeto inválido.')
+    return { projectId: value.projectId as number }
+  })
+  .handler(({ data }) => runtime.projectMetadata(data.projectId))
+
 export const getIssue = createServerFn({ method: 'GET' })
   .validator(issueRef)
   .handler(({ data }) => runtime.readIssue(data.projectId, data.iid))

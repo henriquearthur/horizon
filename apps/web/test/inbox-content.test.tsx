@@ -153,6 +153,61 @@ describe('InboxContent', () => {
     })
   })
 
+  it('closes the Detail and keeps it closed', async () => {
+    const provider = { listComments: vi.fn().mockResolvedValue([]) } as never
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        issueRef="1:1"
+        provider={provider}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Fechar detalhes' })[0]!)
+
+    expect(screen.queryByLabelText('Detalhes do issue')).not.toBeInTheDocument()
+  })
+
+  it('hangs a sub-issue under its parent instead of listing it twice', async () => {
+    const withChild = {
+      ...snapshot,
+      issues: [
+        { ...snapshot.issues[0]!, hasChildren: true },
+        {
+          ...snapshot.issues[0]!,
+          id: 3,
+          iid: 3,
+          title: 'Sub issue',
+          parentIid: 1,
+          labels: [],
+        },
+      ],
+    }
+    render(
+      <InboxContent
+        snapshot={withChild}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    expect(screen.queryByText('Sub issue')).not.toBeInTheDocument()
+    await userEvent.click(
+      screen.getByRole('button', { name: /Expandir sub-issues de Backlog issue/ }),
+    )
+    expect(screen.getByText('Sub issue')).toBeInTheDocument()
+  })
+
   it('keeps the Detail open when assigning the issue to the current user', async () => {
     function Harness() {
       const [current, setCurrent] = useState(snapshot)
