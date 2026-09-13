@@ -156,7 +156,7 @@ function IssueRow({
   onToggle?: () => void
   depth?: number
   onStatusChange?: (status: IssueStatus) => void
-  onToggleSelect?: () => void
+  onToggleSelect?: (() => void) | undefined
   bulkSelected?: boolean
 }) {
   const properties = readIssueProperties(issue)
@@ -266,7 +266,7 @@ function IssueCard({
   childCount?: number
   doneChildren?: number
   onStatusChange?: (status: IssueStatus) => void
-  onToggleSelect?: () => void
+  onToggleSelect?: (() => void) | undefined
   bulkSelected?: boolean
 }) {
   const properties = readIssueProperties(issue)
@@ -456,7 +456,7 @@ export function IssueViews({
                         }}
                         onStatusChange={(status) => onStatusChange?.(issue, status)}
                         onToggleSelect={onToggleSelect ? () => onToggleSelect(issue) : undefined}
-                        bulkSelected={selectedKeys?.has(issueKey(issue))}
+                        bulkSelected={selectedKeys?.has(issueKey(issue)) ?? false}
                       />
                     ))}
                     {!cards.length && (
@@ -512,7 +512,7 @@ export function IssueViews({
           depth={depth}
           onStatusChange={(status) => onStatusChange?.(issue, status)}
           onToggleSelect={onToggleSelect ? () => onToggleSelect(issue) : undefined}
-          bulkSelected={selectedKeys?.has(issueKey(issue))}
+          bulkSelected={selectedKeys?.has(issueKey(issue)) ?? false}
         />
         {open ? children.map((child) => renderRow(child, depth + 1)) : null}
       </div>
