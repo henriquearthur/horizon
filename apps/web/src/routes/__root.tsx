@@ -8,7 +8,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AppHeader } from '~/components/shell/app-header'
+import { AppHeader, type GlobalSearchTarget } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { ScopeDialog } from '~/components/setup/scope-dialog'
 import { EmptyState } from '~/components/shell/empty-state'
@@ -100,6 +100,19 @@ function AppShell({ children }: { children: ReactNode }) {
     runtime.snapshot?.projects ?? [],
     runtime.snapshot?.issues ?? [],
   )
+  const navigateFromSearch = (target: GlobalSearchTarget) => {
+    if (target.kind === 'action' && target.id === 'scope') return setScopeOpen(true)
+    navigate({
+      search: (previous) => ({
+        ...previous,
+        q: undefined,
+        ...(target.kind === 'issue' ? { issue: `${target.projectId}:${target.iid}` } : {}),
+        ...(target.kind === 'group' ? { view: `group:${target.path}`, issue: undefined } : {}),
+        ...(target.kind === 'project' ? { view: `project:${target.path}`, issue: undefined } : {}),
+        ...(target.kind === 'action' ? { view: undefined, issue: undefined } : {}),
+      }),
+    })
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -116,6 +129,14 @@ function AppShell({ children }: { children: ReactNode }) {
             replace: true,
           })
         }
+        {...(runtime.snapshot
+          ? {
+              issues: runtime.snapshot.issues,
+              groups: runtime.snapshot.groups,
+              projects: runtime.snapshot.projects,
+            }
+          : {})}
+        onNavigate={navigateFromSearch}
       />
       <div className="relative flex min-h-0 flex-1">
         <AppSidebar
