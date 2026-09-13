@@ -12,7 +12,7 @@ import {
   AssigneeStack,
   LabelChip,
   LabelOverflow,
-  TypeBadge,
+  TypeMark,
   MetaCount,
   PriorityBadge,
   StatusDot,
@@ -214,6 +214,7 @@ function IssueRow({
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 items-center gap-2">
+            <TypeMark types={types} />
             <button
               type="button"
               onClick={(event) => {
@@ -224,9 +225,8 @@ function IssueRow({
             >
               {issue.title}
             </button>
-            {types.length || labels.length ? (
+            {labels.length ? (
               <div className="hidden max-w-[42%] shrink-0 items-center gap-1.5 sm:flex">
-                <TypeBadge types={types} />
                 <IssueLabels labels={labels} limit={LIST_LABEL_LIMIT} />
               </div>
             ) : null}
@@ -316,19 +316,21 @@ function IssueCard({
         <span className="min-w-0 flex-1 truncate">{path}</span>
         <span className="flex-none font-medium">{code}</span>
       </div>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onOpen()
-        }}
-        className="text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
-      >
-        {issue.title}
-      </button>
-      {types.length || labels.length ? (
+      <div className="flex min-w-0 items-start gap-1.5">
+        <TypeMark types={types} className="mt-[3px]" />
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpen()
+          }}
+          className="min-w-0 flex-1 text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
+        >
+          {issue.title}
+        </button>
+      </div>
+      {labels.length ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <TypeBadge types={types} />
           <IssueLabels labels={labels} limit={CARD_LABEL_LIMIT} />
         </div>
       ) : null}

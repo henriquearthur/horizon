@@ -25,7 +25,8 @@ projects created later join the Escopo on their own.
 
 A work item the Provider links under another Issue — a GitLab child item. A
 sub-issue never shows twice: in the list and in the Kanban it hangs under its
-parent, and the parent carries the `concluídos/total` roll-up.
+parent, and the parent carries the `concluídos/total` roll-up. Sub-issues are
+listed oldest first, so the newest one sits at the end.
 
 ## Issue
 
@@ -57,8 +58,9 @@ it.
 ## Tipo
 
 The kind of work item, read from the Provider labels the wayfinder skill
-brings: `type:spec`, `type:ticket` and their siblings. Horizon shows it as its
-own quiet badge in the list, in the Kanban and in the Detail, never as a Label.
+brings: `type:spec`, `type:ticket` and their siblings. Tipo is never drawn as a
+Label: it is a single coloured glyph leading the title — in the list, in the
+Kanban and in the Detail — with the word itself in the tooltip.
 
 ## Bloqueio
 

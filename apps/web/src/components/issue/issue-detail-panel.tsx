@@ -5,11 +5,13 @@ import type {
   ProviderComment,
   ProviderIssue,
   ProviderMergeRequest,
+  ProviderProject,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
 import {
   PRIORITY_VALUES,
+  STATUS_VALUES,
   blockedBy,
   blocks,
   initiativeIdsFromLabels,
@@ -24,7 +26,9 @@ import {
   CornerLeftUp,
   ExternalLink,
   FolderKanban,
+  FolderGit2,
   GitMerge,
+  Info,
   ListTree,
   LoaderCircle,
   MessageSquare,
@@ -36,14 +40,20 @@ import {
   X,
 } from 'lucide-react'
 import {
-  IssueStatusMenu,
+  AssigneeStack,
   LabelChip,
-  TypeBadge,
+  TypeMark,
   PriorityBadge,
   StatusDot,
   UserAvatar,
 } from '~/components/issue/issue-chrome'
 import { Button } from '~/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
 import { Input } from '~/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { Markdown } from '~/components/ui/markdown'
@@ -57,7 +67,14 @@ import {
 } from '~/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Textarea } from '~/components/ui/textarea'
-import { absoluteTime, relativeTime, visibleLabels, issueTypes } from '~/lib/issue-presentation'
+import {
+  absoluteTime,
+  byAge,
+  relativeTime,
+  visibleLabels,
+  issueTypes,
+  projectPath,
+} from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
 
@@ -78,6 +95,7 @@ export function IssueDetailPanel({
   parent,
   onOpenIssue,
   allIssues = [],
+  projects = [],
   initiatives = [],
 }: {
   issue: ProviderIssue
@@ -93,6 +111,8 @@ export function IssueDetailPanel({
   onOpenIssue?: (issue: ProviderIssue) => void
   /** Every Issue of the Escopo, so blocking links can point anywhere. */
   allIssues?: readonly ProviderIssue[]
+  /** The projects of the Escopo, so a linked Issue can name its repository. */
+  projects?: readonly ProviderProject[]
   initiatives?: readonly Initiative[]
   loading?: boolean
   currentUser?: ProviderUser
@@ -197,6 +217,16 @@ export function IssueDetailPanel({
     }
   }
 
+  const setInitiative = (value: string) =>
+    mutate(() =>
+      provider.updateIssue(issue.projectId, issue.iid, {
+        labels: [
+          ...issue.labels.filter((label) => !label.startsWith('horizon::initiative::')),
+          ...(value === 'none' ? [] : [initiativeLabel(value)]),
+        ],
+      }),
+    )
+
   const assignToMe = () => {
     if (!currentUser || assigneeIds.includes(currentUser.id)) return
     const next = [...assigneeIds, currentUser.id]
@@ -225,10 +255,26 @@ export function IssueDetailPanel({
             <LoaderCircle className="size-5 animate-spin text-primary" aria-label="Carregando" />
           </div>
         )}
-        <header className="flex-none border-b px-5 pt-3.5 pb-4">
-          <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
-            <span className="font-semibold text-primary">#{issue.iid}</span>
-            <span className="min-w-0 flex-1 truncate">{issuePath(issue.webUrl)}</span>
+        <header className="flex-none border-b px-5 pt-3 pb-3">
+          {/*
+           * One identity line: what kind of item it is, where it lives and the
+           * ways out of the panel. Everything that used to be a separate block
+           * — labels, the meta grid, the actions — is folded into the single
+           * control row below the title.
+           */}
+          <div className="mb-2 flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
+            <TypeMark types={types} />
+            <span className="flex-none font-semibold text-primary">#{issue.iid}</span>
+            <span className="min-w-0 max-w-[14rem] truncate">{issuePath(issue.webUrl)}</span>
+            {issue.parentIid !== undefined ? (
+              <ParentReference
+                parentIid={issue.parentIid}
+                parent={parent}
+                webUrl={issue.webUrl}
+                {...(onOpenIssue ? { onOpenIssue } : {})}
+              />
+            ) : null}
+            <span className="flex-1" />
             <Button variant="ghost" size="icon-xs" asChild>
               <a href={issue.webUrl} target="_blank" rel="noreferrer" aria-label="Abrir no GitLab">
                 <ExternalLink />
@@ -239,134 +285,138 @@ export function IssueDetailPanel({
             </Button>
           </div>
 
-          {issue.parentIid !== undefined ? (
-            <ParentReference
-              parentIid={issue.parentIid}
-              parent={parent}
-              webUrl={issue.webUrl}
-              {...(onOpenIssue ? { onOpenIssue } : {})}
-            />
-          ) : null}
-
           {editing ? (
             <Input
               aria-label="Título"
-              className="mb-3 h-9 text-[15px] font-semibold"
+              className="h-9 text-[15px] font-semibold"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
           ) : (
-            <h2 className="mb-3 text-[17px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
+            <h2 className="text-[16px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
               {issue.title}
             </h2>
           )}
 
-          {types.length || shownLabels.length ? (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <TypeBadge types={types} />
-              {shownLabels.map((label) => (
-                <LabelChip key={label} label={label} />
-              ))}
-            </div>
-          ) : null}
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Alterar status: ${properties.status}`}
+                  className={CONTROL_CLASS}
+                >
+                  <StatusDot
+                    status={properties.status}
+                    conflict={properties.conflicts.status}
+                    className="size-3"
+                  />
+                  {properties.status}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[10rem]">
+                {STATUS_VALUES.map((option) => (
+                  <DropdownMenuItem
+                    key={option}
+                    disabled={option === properties.status && !properties.conflicts.status}
+                    onSelect={() =>
+                      void mutate(() =>
+                        provider.updateIssueProperties(issue.projectId, issue.iid, {
+                          status: option,
+                        }),
+                      )
+                    }
+                  >
+                    <StatusDot status={option} />
+                    {option}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1 rounded-full border border-input bg-background pr-3 pl-1">
-              <IssueStatusMenu
-                status={properties.status}
-                conflict={properties.conflicts.status}
-                disabled={busy}
-                onChange={(status) =>
-                  void mutate(() =>
-                    provider.updateIssueProperties(issue.projectId, issue.iid, { status }),
-                  )
-                }
-              />
-              <span className="text-sm">{properties.status}</span>
-            </div>
-
-            <Select
-              value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}
-              disabled={busy}
-              onValueChange={(value) =>
-                void mutate(() =>
-                  provider.updateIssueProperties(issue.projectId, issue.iid, {
-                    priority: value as (typeof PRIORITY_VALUES)[number],
-                  }),
-                )
-              }
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label="Prioridade"
-                className="h-8 min-w-[148px] gap-2.5 rounded-lg border-input bg-background px-2.5 shadow-none *:data-[slot=select-value]:gap-2.5"
-              >
-                <SelectValue placeholder="Corrigir conflito…">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label="Prioridade"
+                  className={CONTROL_CLASS}
+                >
                   <PriorityBadge
-                    priority={properties.priority}
+                    priority={properties.priority ?? 'Sem prioridade'}
                     conflict={properties.conflicts.priority}
                   />
-                  <span className="text-foreground">{properties.priority ?? 'Sem prioridade'}</span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="min-w-[168px] p-1">
+                  {properties.conflicts.priority
+                    ? 'Corrigir conflito'
+                    : (properties.priority ?? 'Sem prioridade')}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[10rem]">
                 {PRIORITY_VALUES.map((priority) => (
-                  <SelectItem
+                  <DropdownMenuItem
                     key={priority}
-                    value={priority}
-                    className="gap-2.5 py-2 pr-8 pl-2.5 text-xs"
+                    disabled={priority === properties.priority && !properties.conflicts.priority}
+                    onSelect={() =>
+                      void mutate(() =>
+                        provider.updateIssueProperties(issue.projectId, issue.iid, { priority }),
+                      )
+                    }
                   >
                     <PriorityBadge priority={priority} />
                     {priority}
-                  </SelectItem>
+                  </DropdownMenuItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            <Select
-              value={initiativeId ?? 'none'}
-              disabled={busy}
-              onValueChange={(value) =>
-                void mutate(() =>
-                  provider.updateIssue(issue.projectId, issue.iid, {
-                    labels: [
-                      ...issue.labels.filter((label) => !label.startsWith('horizon::initiative::')),
-                      ...(value === 'none' ? [] : [initiativeLabel(value)]),
-                    ],
-                  }),
-                )
-              }
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label="Projeto"
-                className="h-8 min-w-[132px] gap-2 rounded-lg border-input bg-background px-2.5 shadow-none *:data-[slot=select-value]:gap-2"
-              >
-                <FolderKanban aria-hidden className="size-3.5 text-muted-foreground" />
-                <SelectValue placeholder="Sem projeto" />
-              </SelectTrigger>
-              <SelectContent className="min-w-[168px] p-1">
-                <SelectItem value="none" className="py-2 pr-8 pl-2.5 text-xs">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label="Projeto"
+                  className={CONTROL_CLASS}
+                >
+                  <FolderKanban aria-hidden className="size-3.5 text-muted-foreground" />
+                  <span className="max-w-[9rem] truncate">
+                    {initiativeId
+                      ? (initiatives.find((item) => item.id === initiativeId)?.name ?? initiativeId)
+                      : 'Sem projeto'}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[11rem]">
+                <DropdownMenuItem
+                  disabled={!initiativeId}
+                  onSelect={() => void setInitiative('none')}
+                >
                   Sem projeto
-                </SelectItem>
+                </DropdownMenuItem>
                 {initiatives.map((initiative) => (
-                  <SelectItem
+                  <DropdownMenuItem
                     key={initiative.id}
-                    value={initiative.id}
-                    className="py-2 pr-8 pl-2.5 text-xs"
+                    disabled={initiative.id === initiativeId}
+                    onSelect={() => void setInitiative(initiative.id)}
                   >
                     {initiative.name}
-                  </SelectItem>
+                  </DropdownMenuItem>
                 ))}
-                {initiativeId && !initiatives.some((item) => item.id === initiativeId) ? (
-                  <SelectItem value={initiativeId} className="py-2 pr-8 pl-2.5 text-xs">
-                    {initiativeId}
-                  </SelectItem>
-                ) : null}
-              </SelectContent>
-            </Select>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-            <div className="flex-1" />
+            <AssigneeControl
+              issue={issue}
+              busy={busy}
+              {...(currentUser ? { currentUser } : {})}
+              onAssignToMe={assignToMe}
+            />
+
+            {shownLabels.length ? <LabelSummary labels={shownLabels} /> : null}
+
+            <span className="flex-1" />
+
+            <IssueFacts issue={issue} />
 
             <Button
               size="xs"
@@ -393,54 +443,6 @@ export function IssueDetailPanel({
           ) : null}
         </header>
 
-        <dl className="grid flex-none grid-cols-2 gap-x-5 gap-y-2 border-b px-5 py-3.5 text-[11.5px]">
-          <DetailMeta label="Responsável">
-            {issue.assignees.length ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <UserAvatar user={issue.assignees[0]} size="xs" />
-                <span className="truncate">
-                  {issue.assignees.map((user) => user.name).join(', ')}
-                </span>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">Não atribuído</span>
-            )}
-          </DetailMeta>
-          {currentUser && !issue.assignees.some((user) => user.id === currentUser.id) ? (
-            <DetailMeta label="Ação">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={assignToMe}
-                className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-50"
-              >
-                <UserPlus aria-hidden className="size-3" />
-                Atribuir a mim
-              </button>
-            </DetailMeta>
-          ) : null}
-          <DetailMeta label="Autor">
-            {issue.author ? (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <UserAvatar user={issue.author} size="xs" />
-                <span className="truncate">{issue.author.name}</span>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
-          </DetailMeta>
-          <DetailMeta label="Atualizado">
-            <span title={absoluteTime(issue.updatedAt)}>
-              {relativeTime(issue.updatedAt) ?? '—'}
-            </span>
-          </DetailMeta>
-          <DetailMeta label="Criado">
-            <span title={absoluteTime(issue.createdAt)}>
-              {relativeTime(issue.createdAt) ?? '—'}
-            </span>
-          </DetailMeta>
-        </dl>
-
         <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
           {subIssues.length ? (
             <CollapsibleSection title="Sub-issues" count={subIssues.length}>
@@ -457,6 +459,7 @@ export function IssueDetailPanel({
               blocking={blocking}
               blockedByReferences={blockedByReferences}
               candidates={allIssues}
+              projects={projects}
               disabled={busy}
               onLink={(target) =>
                 void mutate(() =>
@@ -765,6 +768,131 @@ export function IssueCreateForm({
 }
 
 /**
+ * Every control in the Detail header wears the same quiet pill, so Status,
+ * Prioridade, Projeto and Responsáveis read as one row of affordances instead
+ * of four different widgets.
+ */
+const CONTROL_CLASS =
+  'inline-flex h-7 items-center gap-1.5 rounded-lg border border-input bg-background px-2 text-[12px] text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
+
+/** Responsáveis: the faces, and the one action most people want on them. */
+function AssigneeControl({
+  issue,
+  busy,
+  currentUser,
+  onAssignToMe,
+}: {
+  issue: ProviderIssue
+  busy: boolean
+  currentUser?: ProviderUser
+  onAssignToMe: () => void
+}) {
+  const mine = currentUser && issue.assignees.some((user) => user.id === currentUser.id)
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label="Responsáveis" className={cn(CONTROL_CLASS, 'px-1.5')}>
+          <AssigneeStack users={issue.assignees} size="xs" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-60 p-2">
+        <p className="mb-1.5 px-1 text-[10px] font-semibold tracking-[0.09em] text-muted-foreground uppercase">
+          Responsáveis
+        </p>
+        {issue.assignees.length ? (
+          <ul className="mb-1 space-y-0.5">
+            {issue.assignees.map((user) => (
+              <li key={user.id} className="flex items-center gap-2 px-1 py-1 text-xs">
+                <UserAvatar user={user} size="xs" />
+                <span className="min-w-0 truncate">{user.name}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mb-1 px-1 py-1 text-xs text-muted-foreground">Não atribuído</p>
+        )}
+        {currentUser && !mine ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onAssignToMe}
+            className="flex w-full items-center gap-1.5 rounded-md px-1 py-1.5 text-xs text-primary transition-colors hover:bg-hover disabled:opacity-50"
+          >
+            <UserPlus aria-hidden className="size-3.5" />
+            Atribuir a mim
+          </button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** Labels, two of them at most; the rest wait behind a counter. */
+function LabelSummary({ labels }: { labels: readonly string[] }) {
+  const shown = labels.slice(0, 2)
+  const rest = labels.slice(2)
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {shown.map((label) => (
+        <LabelChip key={label} label={label} className="max-w-[7rem]" />
+      ))}
+      {rest.length ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Mais ${rest.length} labels`}
+              className="inline-flex h-[18px] items-center rounded-full bg-muted px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-hover"
+            >
+              +{rest.length}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="flex w-56 flex-wrap gap-1.5 p-2">
+            {rest.map((label) => (
+              <LabelChip key={label} label={label} />
+            ))}
+          </PopoverContent>
+        </Popover>
+      ) : null}
+    </span>
+  )
+}
+
+/** Autor and the two dates: true, useful, and almost never urgent. */
+function IssueFacts({ issue }: { issue: ProviderIssue }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button size="icon-xs" variant="ghost" aria-label="Mais informações">
+          <Info />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-2.5 text-[11.5px]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+          <dt className="text-muted-foreground">Autor</dt>
+          <dd className="m-0 flex min-w-0 items-center gap-1.5">
+            {issue.author ? (
+              <>
+                <UserAvatar user={issue.author} size="xs" />
+                <span className="truncate">{issue.author.name}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </dd>
+          <dt className="text-muted-foreground">Criado</dt>
+          <dd className="m-0 truncate">{absoluteTime(issue.createdAt) ?? '—'}</dd>
+          <dt className="text-muted-foreground">Atualizado</dt>
+          <dd className="m-0 truncate" title={absoluteTime(issue.updatedAt)}>
+            {relativeTime(issue.updatedAt) ?? '—'}
+          </dd>
+        </dl>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
  * The Issue this one hangs under. The list and the Kanban already say it; the
  * Detail says it too, right above the title, and takes the reader there.
  */
@@ -786,12 +914,12 @@ function ParentReference({
       {properties ? (
         <StatusDot status={properties.status} conflict={properties.conflicts.status} />
       ) : null}
-      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">#{parentIid}</span>
+      <span className="flex-none">#{parentIid}</span>
       <span className="min-w-0 truncate">{parent?.title ?? 'Issue pai'}</span>
     </>
   )
   const className =
-    'mb-2 flex w-full min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-[11.5px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground'
+    'flex min-w-0 max-w-[12rem] items-center gap-1 rounded-md px-1 py-0.5 text-left text-muted-foreground transition-colors hover:bg-hover hover:text-foreground'
 
   // Without the parent in the Escopo there is nothing to open in place, so the
   // reference falls back to the Provider.
@@ -831,6 +959,7 @@ function BlockingSection({
   blocking,
   blockedByReferences,
   candidates,
+  projects,
   disabled,
   onLink,
   onLinkReverse,
@@ -841,6 +970,7 @@ function BlockingSection({
   blocking: readonly BlockingReference[]
   blockedByReferences: readonly BlockingReference[]
   candidates: readonly ProviderIssue[]
+  projects: readonly ProviderProject[]
   disabled: boolean
   onLink: (target: ProviderIssue) => void
   onLinkReverse: (source: ProviderIssue) => void
@@ -875,7 +1005,10 @@ function BlockingSection({
       >
         {other?.title ?? `Issue ${key} fora do Escopo`}
       </button>
-      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">#{key}</span>
+      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">
+        {other ? repositoryOf(other, projects) : key.split(':')[0]}
+        <span className="ml-1.5 opacity-70">#{other?.iid ?? key.split(':')[1]}</span>
+      </span>
       <Button
         size="icon-xs"
         variant="ghost"
@@ -929,6 +1062,7 @@ function BlockingSection({
         </Select>
         <IssuePicker
           issues={selectable}
+          projects={projects}
           disabled={disabled}
           onPick={(picked) => (direction === 'blocks' ? onLink(picked) : onLinkReverse(picked))}
         />
@@ -937,24 +1071,41 @@ function BlockingSection({
   )
 }
 
-/** A searchable one-shot issue chooser, used to point a blocking link at. */
+/**
+ * A searchable one-shot issue chooser. A blocking link can point at any
+ * repository of the Escopo, so the chooser groups by repository and names it:
+ * `#12` alone says nothing when twenty projects each have one.
+ */
 function IssuePicker({
   issues,
+  projects,
   disabled,
   onPick,
 }: {
   issues: readonly ProviderIssue[]
+  projects: readonly ProviderProject[]
   disabled: boolean
   onPick: (issue: ProviderIssue) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const needle = query.trim().toLocaleLowerCase()
-  const visible = issues
-    .filter(
-      (issue) => !needle || `#${issue.iid} ${issue.title}`.toLocaleLowerCase().includes(needle),
-    )
-    .slice(0, 50)
+  const groups = useMemo(() => {
+    const byRepository = new Map<string, ProviderIssue[]>()
+    let shown = 0
+    for (const issue of issues) {
+      const repository = repositoryOf(issue, projects)
+      if (
+        needle &&
+        !`#${issue.iid} ${issue.title} ${repository}`.toLocaleLowerCase().includes(needle)
+      )
+        continue
+      if (shown >= 50) break
+      shown += 1
+      byRepository.set(repository, [...(byRepository.get(repository) ?? []), issue])
+    }
+    return [...byRepository.entries()]
+  }, [issues, projects, needle])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -964,7 +1115,7 @@ function IssuePicker({
           Adicionar bloqueio
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(22rem,80vw)] p-0">
+      <PopoverContent align="start" className="w-[min(24rem,80vw)] p-0">
         <div className="relative flex items-center border-b p-1.5">
           <Search
             aria-hidden
@@ -973,32 +1124,41 @@ function IssuePicker({
           <Input
             autoFocus
             aria-label="Buscar issue para vincular"
-            placeholder="Buscar issue…"
+            placeholder="Buscar por título, #número ou repositório…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="h-7 border-0 bg-transparent pl-6 text-xs shadow-none focus-visible:ring-0"
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
-          {visible.map((issue) => (
-            <button
-              key={issue.id}
-              type="button"
-              onClick={() => {
-                onPick(issue)
-                setQuery('')
-                setOpen(false)
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-hover"
-            >
-              <StatusDot status={readIssueProperties(issue).status} />
-              <span className="min-w-0 flex-1 truncate">{issue.title}</span>
-              <span className="flex-none font-mono text-[10px] text-muted-foreground">
-                #{issue.iid}
-              </span>
-            </button>
+        <div className="max-h-72 overflow-y-auto p-1">
+          {groups.map(([repository, found]) => (
+            <div key={repository} className="mb-1 last:mb-0">
+              <p className="sticky top-0 z-10 flex items-center gap-1.5 bg-popover px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                <FolderGit2 aria-hidden className="size-3 flex-none" />
+                <span className="min-w-0 truncate">{repository}</span>
+                <span className="ml-auto tabular-nums opacity-70">{found.length}</span>
+              </p>
+              {found.map((issue) => (
+                <button
+                  key={issue.id}
+                  type="button"
+                  onClick={() => {
+                    onPick(issue)
+                    setQuery('')
+                    setOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 pl-3.5 text-left text-xs transition-colors hover:bg-hover"
+                >
+                  <StatusDot status={readIssueProperties(issue).status} />
+                  <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+                  <span className="flex-none font-mono text-[10px] text-muted-foreground">
+                    #{issue.iid}
+                  </span>
+                </button>
+              ))}
+            </div>
           ))}
-          {!visible.length ? (
+          {!groups.length ? (
             <p className="px-2 py-3 text-center text-xs text-muted-foreground">
               Nenhuma issue encontrada.
             </p>
@@ -1006,6 +1166,14 @@ function IssuePicker({
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** `grupo/projeto` for an Issue, falling back to the raw project id. */
+function repositoryOf(issue: ProviderIssue, projects: readonly ProviderProject[]): string {
+  return projectPath(
+    projects.find((project) => project.id === issue.projectId),
+    issue.projectId,
   )
 }
 
@@ -1018,6 +1186,8 @@ function SubIssueList({
   onOpenIssue?: ((issue: ProviderIssue) => void) | undefined
 }) {
   const done = issues.filter((item) => readIssueProperties(item).status === 'Concluído').length
+  // Oldest first, newest at the end, whatever order the caller handed over.
+  const ordered = [...issues].sort(byAge)
   return (
     <div className="space-y-1">
       <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -1032,7 +1202,7 @@ function SubIssueList({
           />
         </span>
       </div>
-      {issues.map((child) => {
+      {ordered.map((child) => {
         const properties = readIssueProperties(child)
         return (
           <button
@@ -1145,15 +1315,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="space-y-1">
       <span className="block text-[11px] font-medium text-muted-foreground">{label}</span>
       {children}
-    </div>
-  )
-}
-
-function DetailMeta({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <dt className="flex-none text-muted-foreground">{label}</dt>
-      <dd className="m-0 min-w-0 flex-1 truncate text-foreground">{children}</dd>
     </div>
   )
 }

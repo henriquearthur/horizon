@@ -50,7 +50,7 @@ import {
 } from '~/components/ui/select'
 import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved-views'
 import { useInitiatives } from '~/db/use-initiatives'
-import { projectPath } from '~/lib/issue-presentation'
+import { byAge, projectPath } from '~/lib/issue-presentation'
 import { horizonIssueHref } from '~/lib/search'
 import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
@@ -218,6 +218,7 @@ export function InboxContent({
       const parent = `${issue.projectId}:${issue.parentIid}`
       map.set(parent, [...(map.get(parent) ?? []), issue])
     }
+    for (const [key, children] of map) map.set(key, [...children].sort(byAge))
     return map
   }, [issues])
   const roots = useMemo(() => {
@@ -240,9 +241,11 @@ export function InboxContent({
   const selectedChildren = useMemo(
     () =>
       selected
-        ? snapshot.issues.filter(
-            (issue) => issue.projectId === selected.projectId && issue.parentIid === selected.iid,
-          )
+        ? snapshot.issues
+            .filter(
+              (issue) => issue.projectId === selected.projectId && issue.parentIid === selected.iid,
+            )
+            .sort(byAge)
         : [],
     [selected, snapshot.issues],
   )
@@ -653,6 +656,7 @@ export function InboxContent({
             parent={selectedParent}
             onOpenIssue={openIssue}
             allIssues={snapshot.issues}
+            projects={snapshot.projects}
             initiatives={initiatives}
             onCommentCreated={(comment) => setComments((current) => [...current, comment])}
             users={snapshot.users}

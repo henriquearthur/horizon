@@ -55,8 +55,9 @@ export function LabelOverflow({ count }: { count: number }) {
 
 /**
  * What kind of work item this is, read from the `type:*` labels the Provider
- * carries. It reads as a quiet piece of chrome next to the title — an icon
- * with its word — instead of competing with the coloured label chips.
+ * carries. Tipo is not a Label, so it does not look like one: it is a single
+ * glyph that leads the title, the way a file type leads a file name. The word
+ * itself lives in the tooltip, so the row stays quiet.
  */
 const TYPE_ICONS: Readonly<Record<string, { Icon: typeof Ticket; className: string }>> = {
   spec: { Icon: FileText, className: 'text-violet-500' },
@@ -71,34 +72,42 @@ const TYPE_ICONS: Readonly<Record<string, { Icon: typeof Ticket; className: stri
   docs: { Icon: BookText, className: 'text-blue-500' },
 }
 
-export function TypeBadge({ types, className }: { types: readonly string[]; className?: string }) {
+export function TypeMark({
+  types,
+  className,
+  iconClassName,
+}: {
+  types: readonly string[]
+  className?: string
+  iconClassName?: string
+}) {
   if (!types.length) return null
   return (
-    <>
+    <span className={cn('inline-flex flex-none items-center gap-0.5', className)}>
       {types.map((type) => {
         const presentation = TYPE_ICONS[type] ?? {
           Icon: Shapes,
           className: 'text-muted-foreground',
         }
         return (
-          <span
-            key={type}
-            title={`Tipo: ${type}`}
-            className={cn(
-              'inline-flex h-[18px] max-w-[9rem] shrink-0 items-center gap-1 rounded-md border border-border/80 bg-background px-1.5 text-[10px] font-medium text-muted-foreground',
-              className,
-            )}
-          >
-            <presentation.Icon
-              aria-hidden
-              className={cn('size-[11px] flex-none', presentation.className)}
-              strokeWidth={2.25}
-            />
-            <span className="truncate">{type}</span>
-          </span>
+          <Tooltip key={type}>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={`Tipo: ${type}`}
+                className={cn('inline-flex flex-none items-center', presentation.className)}
+              >
+                <presentation.Icon
+                  aria-hidden
+                  className={cn('size-[13px]', iconClassName)}
+                  strokeWidth={2.25}
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Tipo: {type}</TooltipContent>
+          </Tooltip>
         )
       })}
-    </>
+    </span>
   )
 }
 
