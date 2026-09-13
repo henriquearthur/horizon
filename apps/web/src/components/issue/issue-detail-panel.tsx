@@ -296,13 +296,13 @@ export function IssueDetailPanel({
                 status={properties.status}
                 conflict={properties.conflicts.status}
                 disabled={busy}
+                label={properties.status}
                 onChange={(status) =>
                   void mutate(() =>
                     provider.updateIssueProperties(issue.projectId, issue.iid, { status }),
                   )
                 }
               />
-              <span className="text-sm">{properties.status}</span>
             </div>
 
             <Select
@@ -885,12 +885,19 @@ function BlockingSection({
       !linked.has(`${candidate.projectId}:${candidate.iid}`),
   )
 
-  const row = (reference: BlockingReference, other: ProviderIssue | undefined, key: string) => (
+  const row = (
+    reference: BlockingReference,
+    other: ProviderIssue | undefined,
+    key: string,
+    blocked = false,
+  ) => (
     <li key={reference.label} className="flex items-center gap-2 px-2.5 py-1.5">
       {other ? (
         <StatusDot
           status={readIssueProperties(other).status}
           conflict={readIssueProperties(other).conflicts.status}
+          blocked={blocked}
+          blockedTitle={`${readIssueProperties(other).status} · bloqueada`}
         />
       ) : (
         <OctagonX aria-hidden className="size-3.5 flex-none text-muted-foreground" />
@@ -926,7 +933,14 @@ function BlockingSection({
         <div>
           <p className="mb-1 text-[11px] text-muted-foreground">Bloqueia</p>
           <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border">
-            {blocking.map((reference) => row(reference, reference.targetIssue, reference.target))}
+            {blocking.map((reference) =>
+              row(
+                reference,
+                reference.targetIssue,
+                reference.target,
+                readIssueProperties(issue).status !== 'Concluído',
+              ),
+            )}
           </ul>
         </div>
       ) : null}

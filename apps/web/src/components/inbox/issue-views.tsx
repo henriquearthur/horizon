@@ -87,22 +87,13 @@ function IssueMeta({
     >
       {path ? <span className="truncate">{path}</span> : null}
       {code ? <span className="flex-none font-medium text-muted-foreground/90">{code}</span> : null}
-      {issue.parentIid !== undefined ? (
-        <a
-          className="flex-none underline decoration-muted-foreground/40 underline-offset-2 hover:text-foreground"
-          href={issue.webUrl.replace(/\/issues\/\d+(?:$|[?#])/, `/issues/${issue.parentIid}`)}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
-        >
-          filho de #{issue.parentIid}
-        </a>
-      ) : null}
       {created ? (
         <>
-          <span aria-hidden className="flex-none opacity-50">
-            ·
-          </span>
+          {path || code ? (
+            <span aria-hidden className="flex-none opacity-50">
+              ·
+            </span>
+          ) : null}
           <time
             className="flex-none whitespace-nowrap"
             dateTime={issue.createdAt}
@@ -269,6 +260,11 @@ function IssueCard({
   draggable,
   childCount = 0,
   doneChildren = 0,
+  blocked = false,
+  expanded = false,
+  onToggle,
+  collapsed = false,
+  onCollapse,
   onStatusChange,
 }: {
   issue: ProviderIssue
@@ -282,6 +278,11 @@ function IssueCard({
   draggable: boolean
   childCount?: number
   doneChildren?: number
+  blocked?: boolean
+  expanded?: boolean
+  onToggle?: () => void
+  collapsed?: boolean
+  onCollapse?: () => void
   onStatusChange?: (status: IssueStatus) => void
 }) {
   const properties = readIssueProperties(issue)
@@ -312,6 +313,8 @@ function IssueCard({
           <IssueStatusMenu
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             onChange={onStatusChange}
             className="-m-1 size-5"
           />
@@ -319,11 +322,31 @@ function IssueCard({
           <StatusDot
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             className="size-1.5"
           />
         )}
         <span className="min-w-0 flex-1 truncate">{path}</span>
         <span className="flex-none font-medium">{code}</span>
+        {childCount ? (
+          <button
+            type="button"
+            aria-label={collapsed ? 'Mostrar subissues' : 'Recolher subissues'}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Mostrar subissues' : 'Recolher subissues'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onCollapse?.()
+            }}
+            className="flex size-5 flex-none items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn('size-3 transition-transform', collapsed && '-rotate-90')}
+            />
+          </button>
+        ) : null}
       </div>
       <div className="flex min-w-0 items-start gap-1.5">
         <TypeMark types={types} className="mt-[3px]" />
@@ -375,6 +398,7 @@ export function IssueViews({
   const [dragging, setDragging] = useState<number>()
   const [dragOver, setDragOver] = useState<string>()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedParents, setCollapsedParents] = useState<ReadonlySet<string>>(new Set())
   const projectById = new Map(projects.map((project) => [project.id, project]))
   const pathFor = (issue: ProviderIssue) =>
     projectPath(projectById.get(issue.projectId), issue.projectId)
@@ -383,6 +407,12 @@ export function IssueViews({
   const isBlocked = (issue: ProviderIssue) => blockedKeys?.has(issueKey(issue)) ?? false
   const toggle = (key: string) =>
     setExpanded((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  const toggleCollapsed = (key: string) =>
+    setCollapsedParents((current) => {
       const next = new Set(current)
       if (!next.delete(key)) next.add(key)
       return next
@@ -418,9 +448,13 @@ export function IssueViews({
             </header>
             <div className="flex items-start gap-4">
               {STATUS_VALUES.map((status) => {
-                const cards = laneIssues.filter(
-                  (issue) => readIssueProperties(issue).status === status,
-                )
+                const cards = laneIssues
+                  .filter((issue) => readIssueProperties(issue).status === status)
+                  .sort(
+                    (a, b) =>
+                      Number(readIssueProperties(a).status === 'Concluído') -
+                      Number(readIssueProperties(b).status === 'Concluído'),
+                  )
                 const dropKey = `${projectId}:${status}`
                 const over = dragOver === dropKey
                 return (
@@ -460,24 +494,52 @@ export function IssueViews({
                       </span>
                     </header>
                     {cards.map((issue) => (
-                      <IssueCard
-                        key={issue.id}
-                        issue={issue}
-                        path={pathFor(issue)}
-                        code={codeFor(issue)}
-                        selected={issue.id === selectedId}
-                        dragging={dragging === issue.id}
-                        draggable={canDrag}
-                        childCount={childrenFor(issue).length}
-                        doneChildren={doneCount(childrenFor(issue))}
-                        onOpen={() => onOpen(issue)}
-                        onDragStart={() => setDragging(issue.id)}
-                        onDragEnd={() => {
-                          setDragging(undefined)
-                          setDragOver(undefined)
-                        }}
-                        onStatusChange={(status) => onStatusChange?.(issue, status)}
-                      />
+                      <div key={issue.id}>
+                        <IssueCard
+                          issue={issue}
+                          path={pathFor(issue)}
+                          code={codeFor(issue)}
+                          selected={issue.id === selectedId}
+                          dragging={dragging === issue.id}
+                          draggable={canDrag}
+                          childCount={childrenFor(issue).length}
+                          doneChildren={doneCount(childrenFor(issue))}
+                          blocked={isBlocked(issue)}
+                          collapsed={collapsedParents.has(issueKey(issue))}
+                          onCollapse={() => toggleCollapsed(issueKey(issue))}
+                          expanded={expanded.has(issueKey(issue))}
+                          onToggle={() => toggle(issueKey(issue))}
+                          onOpen={() => onOpen(issue)}
+                          onDragStart={() => setDragging(issue.id)}
+                          onDragEnd={() => {
+                            setDragging(undefined)
+                            setDragOver(undefined)
+                          }}
+                          onStatusChange={(status) => onStatusChange?.(issue, status)}
+                        />
+                        {childrenFor(issue).length && !collapsedParents.has(issueKey(issue)) ? (
+                          <div className="ml-3 space-y-2.5 border-l-2 border-muted-foreground/20 pt-3 pl-3">
+                            {childrenFor(issue).map((child) => (
+                              <IssueCard
+                                issue={child}
+                                path={pathFor(child)}
+                                code={codeFor(child)}
+                                selected={child.id === selectedId}
+                                dragging={dragging === child.id}
+                                draggable={canDrag}
+                                blocked={isBlocked(child)}
+                                onOpen={() => onOpen(child)}
+                                onDragStart={() => setDragging(child.id)}
+                                onDragEnd={() => {
+                                  setDragging(undefined)
+                                  setDragOver(undefined)
+                                }}
+                                onStatusChange={(nextStatus) => onStatusChange?.(child, nextStatus)}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ))}
                     {!cards.length && (
                       <p
