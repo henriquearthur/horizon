@@ -43,6 +43,60 @@ const snapshot: RuntimeSnapshot = {
 describe('InboxContent', () => {
   beforeEach(() => localStorage.clear())
 
+  it.each(['list', 'kanban'] as const)(
+    'changes status from the %s icon without opening the issue',
+    async (mode) => {
+      const updateIssueProperties = vi.fn().mockResolvedValue(snapshot.issues[0])
+      const onIssueSelected = vi.fn()
+      render(
+        <InboxContent
+          snapshot={snapshot}
+          view={{ _tag: 'Builtin', id: 'general' }}
+          mode={mode}
+          query=""
+          provider={{ updateIssueProperties } as never}
+          refresh={vi.fn()}
+          refreshing={false}
+          onIssueSelected={onIssueSelected}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+      expect(await screen.findByRole('menuitem', { name: 'Em andamento' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Concluído' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Concluído' }))
+
+      expect(updateIssueProperties).toHaveBeenCalledWith(1, 1, { status: 'Concluído' })
+      expect(onIssueSelected).not.toHaveBeenCalled()
+    },
+  )
+
+  it('shows status mutation failures and remains retryable', async () => {
+    const updateIssueProperties = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Falha ao fechar no GitLab.'))
+      .mockResolvedValueOnce(snapshot.issues[0])
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        provider={{ updateIssueProperties } as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Concluído' }))
+    expect(await screen.findByText('Falha ao fechar no GitLab.')).toHaveAttribute('role', 'alert')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Em andamento' }))
+    expect(updateIssueProperties).toHaveBeenCalledTimes(2)
+  })
+
   it('names timestamp sort options explicitly', async () => {
     render(
       <InboxContent

@@ -2,6 +2,13 @@ import type { IssuePriority, IssueStatus, ProviderUser } from '@horizon/domain'
 import { CircleCheck, CircleDashed, CircleDot, TriangleAlert, UserRound } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
+import { STATUS_VALUES } from '@horizon/domain'
 import { initialsOf } from '~/lib/initials'
 import { priorityPresentation, statusPresentation } from '~/lib/issue-presentation'
 import { tintStyle } from '~/lib/tint'
@@ -68,6 +75,55 @@ export function StatusDot({
         strokeWidth={2.25}
       />
     </span>
+  )
+}
+
+export function IssueStatusMenu({
+  status,
+  conflict = false,
+  disabled = false,
+  onChange,
+  className,
+}: {
+  status: IssueStatus
+  conflict?: boolean
+  disabled?: boolean
+  onChange: (status: IssueStatus) => void
+  className?: string
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={`Alterar status: ${status}`}
+          onClick={(event) => event.stopPropagation()}
+          className={cn(
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+            className,
+          )}
+        >
+          <StatusDot status={status} conflict={conflict} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="min-w-[10rem]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {STATUS_VALUES.map((option) => (
+          <DropdownMenuItem
+            key={option}
+            disabled={option === status && !conflict}
+            onSelect={() => onChange(option)}
+          >
+            <StatusDot status={option} />
+            {option}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
