@@ -5,6 +5,10 @@ import {
   sortIssues,
   visibleIssueHierarchy,
   type ProviderIssue,
+  blockingLabel,
+  blocks,
+  blockedBy,
+  blockingReferences,
 } from '../src/index.ts'
 
 const issue = (id: number, labels: readonly string[]): ProviderIssue => ({
@@ -19,6 +23,17 @@ const issue = (id: number, labels: readonly string[]): ProviderIssue => ({
 })
 
 describe('Inbox grouping', () => {
+  it('derives informational blocking in both directions, including inaccessible references', () => {
+    const source = issue(1, [])
+    const target = { ...issue(2, []), projectId: 9 }
+    const label = blockingLabel(source, target)
+    const linked = { ...source, labels: [label] }
+    expect(blocks(linked, [linked, target])).toHaveLength(1)
+    expect(blockedBy(target, [linked, target])).toHaveLength(1)
+    expect(blockingReferences([linked, target])[0]?.valid).toBe(true)
+    const invalid = { ...source, labels: [blockingLabel(source, { projectId: 88, iid: 7 })] }
+    expect(blockingReferences([invalid])[0]?.valid).toBe(false)
+  })
   it('keeps an old closed parent and all direct children while one child is open', () => {
     const old = '2026-01-01T00:00:00Z'
     const parent = { ...issue(1, []), state: 'closed' as const, closedAt: old }
