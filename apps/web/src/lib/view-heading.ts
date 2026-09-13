@@ -5,8 +5,11 @@ export interface ViewHeading {
   readonly subtitle: string
 }
 
-/** Title and subtitle shown above the content area for a View. */
-export const activeViewHeading = (view: ViewRef): ViewHeading => {
+/**
+ * Title and subtitle shown above the content area for a View. A Projeto is
+ * Horizon-owned, so its name has to be handed in by the caller.
+ */
+export const activeViewHeading = (view: ViewRef, initiativeName?: string): ViewHeading => {
   switch (view._tag) {
     case 'Builtin': {
       const builtin = builtinView(view.id)
@@ -18,5 +21,10 @@ export const activeViewHeading = (view: ViewRef): ViewHeading => {
       return { title: view.path, subtitle: 'projeto' }
     case 'Saved':
       return { title: 'View salva', subtitle: 'filtros salvos por você' }
+    case 'Initiative':
+      return {
+        title: initiativeName ?? view.id,
+        subtitle: 'projeto, entre repositórios e grupos',
+      }
   }
 }

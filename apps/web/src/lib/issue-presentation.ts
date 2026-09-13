@@ -1,6 +1,7 @@
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
+  isHorizonLabel,
   type IssuePriority,
   type IssueStatus,
   type ProviderIssue,
@@ -112,9 +113,18 @@ export const absoluteTime = (value: string | undefined): string | undefined => {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(time)
 }
 
-/** The labels a human cares about: everything that is not a Label Horizon. */
-export const visibleLabels = (labels: readonly string[]): readonly string[] =>
-  labels.filter((label) => !label.startsWith('horizon::') && !label.startsWith('type:'))
+const TYPE_PREFIX = 'type:'
 
+/** A Provider label that says what kind of work item this is, e.g. `type:spec`. */
+export const isTypeLabel = (label: string): boolean => label.startsWith(TYPE_PREFIX)
+
+/**
+ * The labels a human cares about: everything that is neither a Label Horizon
+ * nor a type label, which gets its own badge.
+ */
+export const visibleLabels = (labels: readonly string[]): readonly string[] =>
+  labels.filter((label) => !isHorizonLabel(label) && !isTypeLabel(label))
+
+/** The type of the Issue, without the `type:` prefix, e.g. `spec`. */
 export const issueTypes = (labels: readonly string[]): readonly string[] =>
-  labels.filter((label) => label.startsWith('type:'))
+  labels.filter(isTypeLabel).map((label) => label.slice(TYPE_PREFIX.length).trim().toLowerCase())

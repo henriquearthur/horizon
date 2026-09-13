@@ -1,18 +1,26 @@
-import { builtinViews, isIssueVisible, savedViewRef, viewRefToParam } from '@horizon/domain'
+import {
+  builtinViews,
+  initiativeIdsFromLabels,
+  initiativeViewRef,
+  isIssueVisible,
+  savedViewRef,
+  viewRefToParam,
+} from '@horizon/domain'
 import {
   createRootRoute,
   HeadContent,
   Outlet,
   Scripts,
-  useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AppHeader, type GlobalSearchTarget } from '~/components/shell/app-header'
+import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { ScopeDialog } from '~/components/setup/scope-dialog'
+import { InitiativeDialog } from '~/components/initiative/initiative-dialog'
 import { EmptyState } from '~/components/shell/empty-state'
 import { useSavedViews } from '~/db/use-saved-views'
+import { useInitiatives } from '~/db/use-initiatives'
 import { ThemeProvider, themeBootstrapScript } from '~/lib/theme'
 import { buildScopeTree } from '~/lib/scope-tree'
 import { HorizonRuntimeProvider, useHorizonRuntime } from '~/runtime/runtime-provider'
@@ -76,10 +84,10 @@ const builtinSidebarItems: readonly SidebarItem[] = builtinViews.map((view) => (
 }))
 
 function AppShell({ children }: { children: ReactNode }) {
-  const { viewParam, query } = resolveShellSearch(Route.useSearch())
-  const navigate = useNavigate({ from: Route.fullPath })
+  const { viewParam } = resolveShellSearch(Route.useSearch())
   const runtime = useHorizonRuntime()
   const [scopeOpen, setScopeOpen] = useState(false)
+  const [initiativesOpen, setInitiativesOpen] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
   useEffect(() => {
     try {
@@ -113,48 +121,20 @@ function AppShell({ children }: { children: ReactNode }) {
   }, [scopeEmpty])
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
+  const issueInitiativeIds = (runtime.snapshot?.issues ?? []).flatMap((issue) =>
+    initiativeIdsFromLabels(issue.labels),
+  )
+  const initiatives = useInitiatives(issueInitiativeIds)
   const scopeTree = buildScopeTree(
     runtime.snapshot?.groups ?? [],
     runtime.snapshot?.projects ?? [],
     runtime.snapshot?.issues ?? [],
   )
-  const navigateFromSearch = (target: GlobalSearchTarget) => {
-    if (target.kind === 'action' && target.id === 'scope') return setScopeOpen(true)
-    navigate({
-      search: (previous) => ({
-        ...previous,
-        q: undefined,
-        ...(target.kind === 'issue' ? { issue: `${target.projectId}:${target.iid}` } : {}),
-        ...(target.kind === 'group' ? { view: `group:${target.path}`, issue: undefined } : {}),
-        ...(target.kind === 'project' ? { view: `project:${target.path}`, issue: undefined } : {}),
-        ...(target.kind === 'action' ? { view: undefined, issue: undefined } : {}),
-      }),
-    })
-  }
-
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <AppHeader
         userName={runtime.snapshot?.connection.user.name ?? null}
         userAvatarUrl={runtime.snapshot?.connection.user.avatarUrl}
-        query={query}
-        onQueryChange={(next) =>
-          navigate({
-            search: (previous) => ({
-              ...previous,
-              ...(next === '' ? { q: undefined } : { q: next }),
-            }),
-            replace: true,
-          })
-        }
-        {...(runtime.snapshot
-          ? {
-              issues: runtime.snapshot.issues,
-              groups: runtime.snapshot.groups,
-              projects: runtime.snapshot.projects,
-            }
-          : {})}
-        onNavigate={navigateFromSearch}
       />
       <div className="relative flex min-h-0 flex-1">
         <AppSidebar
@@ -177,12 +157,25 @@ function AppShell({ children }: { children: ReactNode }) {
           groups={scopeTree.groups}
           standaloneProjects={scopeTree.standaloneProjects}
           onConfigureScope={() => setScopeOpen(true)}
+          initiatives={initiatives.map((initiative) => ({
+            viewParam: viewRefToParam(initiativeViewRef(initiative.id)),
+            label: initiative.name,
+            icon: '◈',
+            count: String(issueInitiativeIds.filter((id) => id === initiative.id).length),
+          }))}
+          onManageInitiatives={() => setInitiativesOpen(true)}
           favorites={favorites}
           onToggleFavorite={toggleFavorite}
         />
         {children}
       </div>
       <ScopeDialog open={scopeOpen} onOpenChange={setScopeOpen} />
+      <InitiativeDialog
+        open={initiativesOpen}
+        onOpenChange={setInitiativesOpen}
+        discoveredIds={issueInitiativeIds}
+        issueCountOf={(id) => issueInitiativeIds.filter((found) => found === id).length}
+      />
     </div>
   )
 }

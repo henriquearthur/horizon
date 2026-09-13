@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { AppHeader } from '~/components/shell/app-header'
 import { initialsOf } from '~/lib/initials'
 import { ThemeProvider } from '~/lib/theme'
@@ -9,7 +9,7 @@ import { renderWithRouter } from './router-harness'
 const renderHeader = (props: Partial<React.ComponentProps<typeof AppHeader>> = {}) =>
   renderWithRouter(
     <ThemeProvider>
-      <AppHeader userName={null} query="" onQueryChange={() => {}} {...props} />
+      <AppHeader userName={null} {...props} />
     </ThemeProvider>,
   )
 
@@ -38,42 +38,11 @@ describe('AppHeader', () => {
     expect(screen.getByText('CD')).toBeInTheDocument()
   })
 
-  it('reports what the user types in the global search', async () => {
-    const onQueryChange = vi.fn()
-    await renderHeader({ onQueryChange })
-    const search = screen.getByRole('searchbox', { name: 'Buscar issues, projetos, discussões' })
-
-    await userEvent.type(search, 'tf')
-
-    expect(onQueryChange).toHaveBeenCalledWith('t')
-    expect(onQueryChange).toHaveBeenCalledWith('f')
-  })
-
-  it('clears the controlled search without leaving stale text', async () => {
-    const onQueryChange = vi.fn()
-    await renderHeader({ query: 'antiga', onQueryChange })
-    await userEvent.click(screen.getByRole('button', { name: 'Limpar busca' }))
-    expect(onQueryChange).toHaveBeenLastCalledWith('')
-  })
-
-  it('opens and focuses the same global search with Command+K and Ctrl+K', async () => {
+  it('no longer carries a global search field or command palette', async () => {
     await renderHeader()
-    const search = screen.getByRole('searchbox', { name: 'Buscar issues, projetos, discussões' })
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
     await userEvent.keyboard('{Meta>}k{/Meta}')
-    expect(search).toHaveFocus()
-    search.blur()
-    await userEvent.keyboard('{Control>}k{/Control}')
-    expect(search).toHaveFocus()
-  })
-
-  it('navigates through matching actions with the keyboard', async () => {
-    const onNavigate = vi.fn()
-    await renderHeader({ query: 'configurar', onNavigate })
-    const search = screen.getByRole('searchbox', { name: 'Buscar issues, projetos, discussões' })
-    await userEvent.click(search)
-    expect(screen.getByRole('option', { name: /Configurar escopo/ })).toBeInTheDocument()
-    await userEvent.keyboard('{Enter}')
-    expect(onNavigate).toHaveBeenCalledWith({ kind: 'action', id: 'scope' })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
   it('offers the opposite theme on the toggle', async () => {

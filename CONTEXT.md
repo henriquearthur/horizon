@@ -53,3 +53,27 @@ it.
 ## Prioridade
 
 `P1`, `P2`, `P3`, `P4` or `Sem prioridade`.
+
+## Tipo
+
+The kind of work item, read from the Provider labels the wayfinder skill
+brings: `type:spec`, `type:ticket` and their siblings. Horizon shows it as its
+own quiet badge in the list, in the Kanban and in the Detail, never as a Label.
+
+## Bloqueio
+
+A dependency between two Issues, `bloqueia` in one direction and `é bloqueada
+por` in the other. GitLab CE has no native link, so Horizon writes it as a
+label on the blocking Issue: `horizon-blocks:<projeto>:<iid>:<projeto>:<iid>`.
+The single colon is deliberate — see
+`docs/adr/0002-bloqueio-nao-usa-scoped-label.md`. A link whose other end is
+outside the Escopo is shown as unreachable instead of disappearing.
+
+## Projeto
+
+A cross-repository objective: one Projeto gathers Issues from any number of
+repositories, groups and subgroups. Membership lives on the Issue, as the
+scoped label `horizon::initiative::<id>`, so GitLab keeps an Issue in at most
+one Projeto. The names are Horizon-owned data and live next to the saved Views;
+an id found on an Issue but missing from the catalog still shows up, named
+after its id.

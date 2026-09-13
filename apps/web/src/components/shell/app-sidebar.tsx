@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, Settings2, Star } from 'lucide-react'
+import { ChevronRight, Folder, FolderKanban, Settings2, Star } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { cn } from '~/lib/utils'
@@ -36,6 +36,9 @@ export interface AppSidebarProps {
   readonly groups: readonly SidebarGroupItem[]
   readonly standaloneProjects?: readonly SidebarItem[]
   readonly onConfigureScope?: () => void
+  /** Projetos of the deployment, each linking to its cross-repository View. */
+  readonly initiatives?: readonly SidebarItem[]
+  readonly onManageInitiatives?: () => void
   readonly favorites?: readonly string[]
   readonly onToggleFavorite?: (viewParam: string) => void
 }
@@ -247,6 +250,8 @@ export function AppSidebar({
   groups,
   standaloneProjects = [],
   onConfigureScope,
+  initiatives = [],
+  onManageInitiatives,
   favorites = [],
   onToggleFavorite,
 }: AppSidebarProps) {
@@ -281,6 +286,24 @@ export function AppSidebar({
         <ViewRow key={item.viewParam} item={item} active={item.viewParam === activeView} />
       ))}
       {savedViews.length === 0 ? <Hint>Aplique filtros e salve para criar uma view.</Hint> : null}
+
+      <SectionLabel>Projetos</SectionLabel>
+      {initiatives.map((item) => (
+        <ViewRow key={item.viewParam} item={item} active={item.viewParam === activeView} />
+      ))}
+      {initiatives.length === 0 ? (
+        <Hint>Um Projeto reúne issues de vários repositórios.</Hint>
+      ) : null}
+      {onManageInitiatives ? (
+        <button
+          type="button"
+          onClick={onManageInitiatives}
+          className={cn(rowClass(false), 'h-[28px] w-full gap-2.5 text-[12px]')}
+        >
+          <FolderKanban aria-hidden className="size-3.5" />
+          <span>Gerenciar Projetos</span>
+        </button>
+      ) : null}
 
       <SectionLabel>Favoritos</SectionLabel>
       {favoriteItems.map((item) => (

@@ -13,6 +13,13 @@ export type IssuePriority = (typeof PRIORITY_VALUES)[number]
 export type PropertyField = 'status' | 'priority'
 export const horizonLabel = (field: PropertyField, value: string) => `horizon::${field}::${value}`
 
+/**
+ * Every label Horizon owns: the scoped `horizon::…` properties and the
+ * unscoped `horizon-…` links. None of them belong in the label UI.
+ */
+export const isHorizonLabel = (label: string): boolean =>
+  label.startsWith('horizon::') || label.startsWith('horizon-')
+
 const parse = (labels: readonly string[], field: PropertyField, values: readonly string[]) => {
   const matches = labels
     .filter((label) => label.startsWith(`horizon::${field}::`))

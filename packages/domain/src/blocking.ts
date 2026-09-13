@@ -1,21 +1,39 @@
 import type { ProviderIssue } from './provider-read.ts'
 
-/** Stable label used for an informational cross-project dependency. */
+/**
+ * Stable label used for a cross-project blocking link, written on the blocking
+ * Issue as `<source project>:<source iid>:<target project>:<target iid>`.
+ *
+ * The prefix deliberately uses a single colon: a `horizon::…` name would be a
+ * GitLab scoped label, and GitLab keeps only one label per scope, so an Issue
+ * could never block more than one other Issue.
+ */
+export const BLOCKING_LABEL_PREFIX = 'horizon-blocks:'
+
 export const blockingLabel = (
   source: Pick<ProviderIssue, 'projectId' | 'iid'>,
   target: Pick<ProviderIssue, 'projectId' | 'iid'>,
-): string => `horizon::blocks::${source.projectId}:${source.iid}::${target.projectId}:${target.iid}`
+): string =>
+  `${BLOCKING_LABEL_PREFIX}${source.projectId}:${source.iid}:${target.projectId}:${target.iid}`
 
 export interface BlockingReference {
   readonly source: string
   readonly target: string
+  /** The exact label that encodes this link. */
+  readonly label: string
+  /** The Issue whose labels carry this link; the one to edit to undo it. */
+  readonly carrier: ProviderIssue
   readonly sourceIssue?: ProviderIssue
   readonly targetIssue?: ProviderIssue
   readonly valid: boolean
 }
 
 const key = (projectId: number, iid: number) => `${projectId}:${iid}`
-const pattern = /^horizon::blocks::(\d+):(\d+)::(\d+):(\d+)$/
+const pattern = /^horizon-blocks:(\d+):(\d+):(\d+):(\d+)$/
+
+/** `projectId:iid`, the key both ends of a link are written with. */
+export const issueRefKey = (issue: Pick<ProviderIssue, 'projectId' | 'iid'>): string =>
+  key(issue.projectId, issue.iid)
 
 /** Derives both directions and flags references absent from the readable scope. */
 export const blockingReferences = (
@@ -34,6 +52,8 @@ export const blockingReferences = (
       result.push({
         source,
         target,
+        label,
+        carrier: issue,
         ...(sourceIssue ? { sourceIssue } : {}),
         ...(targetIssue ? { targetIssue } : {}),
         valid: !!sourceIssue && !!targetIssue,
@@ -47,14 +67,20 @@ export const blocks = (
   issue: ProviderIssue,
   issues: readonly ProviderIssue[],
 ): readonly BlockingReference[] =>
-  blockingReferences(issues).filter(
-    (reference) => reference.source === key(issue.projectId, issue.iid),
-  )
+  blockingReferences(issues).filter((reference) => reference.source === issueRefKey(issue))
 
 export const blockedBy = (
   issue: ProviderIssue,
   issues: readonly ProviderIssue[],
 ): readonly BlockingReference[] =>
-  blockingReferences(issues).filter(
-    (reference) => reference.target === key(issue.projectId, issue.iid),
-  )
+  blockingReferences(issues).filter((reference) => reference.target === issueRefKey(issue))
+
+/** Adds the link to the labels of the blocking Issue, never twice. */
+export const withBlockingLink = (
+  source: ProviderIssue,
+  target: Pick<ProviderIssue, 'projectId' | 'iid'>,
+): readonly string[] => [...new Set([...source.labels, blockingLabel(source, target)])]
+
+/** Drops one link from the labels of the Issue that carries it. */
+export const withoutBlockingLink = (reference: BlockingReference): readonly string[] =>
+  reference.carrier.labels.filter((label) => label !== reference.label)

@@ -1,20 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
 import type {
+  BlockingReference,
+  Initiative,
   ProviderComment,
   ProviderIssue,
   ProviderMergeRequest,
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
-import { PRIORITY_VALUES, readIssueProperties } from '@horizon/domain'
+import {
+  PRIORITY_VALUES,
+  blockedBy,
+  blocks,
+  initiativeIdsFromLabels,
+  initiativeLabel,
+  isHorizonLabel,
+  readIssueProperties,
+  withBlockingLink,
+  withoutBlockingLink,
+} from '@horizon/domain'
 import {
   ChevronDown,
+  CornerLeftUp,
   ExternalLink,
+  FolderKanban,
   GitMerge,
   ListTree,
   LoaderCircle,
   MessageSquare,
+  OctagonX,
   Pencil,
+  Plus,
+  Search,
   UserPlus,
   X,
 } from 'lucide-react'
@@ -28,6 +45,7 @@ import {
 } from '~/components/issue/issue-chrome'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { Markdown } from '~/components/ui/markdown'
 import { MultiSelect } from '~/components/ui/multi-select'
 import {
@@ -57,7 +75,10 @@ export function IssueDetailPanel({
   issueHref,
   onIssueSelect,
   subIssues = [],
+  parent,
   onOpenIssue,
+  allIssues = [],
+  initiatives = [],
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
@@ -67,7 +88,12 @@ export function IssueDetailPanel({
   onCommentCreated?: (comment: ProviderComment) => void
   /** Child items of this Issue, as the Provider links them. */
   subIssues?: readonly ProviderIssue[]
+  /** The Issue this one hangs under, when the Provider links it to a parent. */
+  parent?: ProviderIssue | undefined
   onOpenIssue?: (issue: ProviderIssue) => void
+  /** Every Issue of the Escopo, so blocking links can point anywhere. */
+  allIssues?: readonly ProviderIssue[]
+  initiatives?: readonly Initiative[]
   loading?: boolean
   currentUser?: ProviderUser
   users?: readonly ProviderUser[]
@@ -91,6 +117,9 @@ export function IssueDetailPanel({
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
   const types = issueTypes(issue.labels)
+  const initiativeId = initiativeIdsFromLabels(issue.labels)[0]
+  const blocking = useMemo(() => blocks(issue, allIssues), [issue, allIssues])
+  const blockedByReferences = useMemo(() => blockedBy(issue, allIssues), [issue, allIssues])
   // Members and labels of the project are only needed while editing, so they
   // are read on demand instead of travelling in every snapshot.
   const metadata = useProjectMetadata(editing ? issue.projectId : undefined)
@@ -98,7 +127,7 @@ export function IssueDetailPanel({
   const labelOptions = useMemo(
     () =>
       metadata.labels.length
-        ? metadata.labels.filter((label) => !label.startsWith('horizon::'))
+        ? metadata.labels.filter((label) => !isHorizonLabel(label))
         : availableLabels,
     [metadata.labels, availableLabels],
   )
@@ -129,7 +158,10 @@ export function IssueDetailPanel({
     setBusy(true)
     setError(undefined)
     try {
-      onUpdated?.(await action())
+      // The write has to happen even with no listener: `onUpdated?.(await …)`
+      // short-circuits the whole call, arguments included, when nobody listens.
+      const updated = await action()
+      onUpdated?.(updated)
       return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível concluir a ação.')
@@ -207,6 +239,15 @@ export function IssueDetailPanel({
             </Button>
           </div>
 
+          {issue.parentIid !== undefined ? (
+            <ParentReference
+              parentIid={issue.parentIid}
+              parent={parent}
+              webUrl={issue.webUrl}
+              {...(onOpenIssue ? { onOpenIssue } : {})}
+            />
+          ) : null}
+
           {editing ? (
             <Input
               aria-label="Título"
@@ -220,16 +261,14 @@ export function IssueDetailPanel({
             </h2>
           )}
 
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            <TypeBadge types={types} />
-            {shownLabels.length ? (
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {shownLabels.map((label) => (
-                  <LabelChip key={label} label={label} />
-                ))}
-              </div>
-            ) : null}
-          </div>
+          {types.length || shownLabels.length ? (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <TypeBadge types={types} />
+              {shownLabels.map((label) => (
+                <LabelChip key={label} label={label} />
+              ))}
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-1 rounded-full border border-input bg-background pr-3 pl-1">
@@ -281,6 +320,49 @@ export function IssueDetailPanel({
                     {priority}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={initiativeId ?? 'none'}
+              disabled={busy}
+              onValueChange={(value) =>
+                void mutate(() =>
+                  provider.updateIssue(issue.projectId, issue.iid, {
+                    labels: [
+                      ...issue.labels.filter((label) => !label.startsWith('horizon::initiative::')),
+                      ...(value === 'none' ? [] : [initiativeLabel(value)]),
+                    ],
+                  }),
+                )
+              }
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Projeto"
+                className="h-8 min-w-[132px] gap-2 rounded-lg border-input bg-background px-2.5 shadow-none *:data-[slot=select-value]:gap-2"
+              >
+                <FolderKanban aria-hidden className="size-3.5 text-muted-foreground" />
+                <SelectValue placeholder="Sem projeto" />
+              </SelectTrigger>
+              <SelectContent className="min-w-[168px] p-1">
+                <SelectItem value="none" className="py-2 pr-8 pl-2.5 text-xs">
+                  Sem projeto
+                </SelectItem>
+                {initiatives.map((initiative) => (
+                  <SelectItem
+                    key={initiative.id}
+                    value={initiative.id}
+                    className="py-2 pr-8 pl-2.5 text-xs"
+                  >
+                    {initiative.name}
+                  </SelectItem>
+                ))}
+                {initiativeId && !initiatives.some((item) => item.id === initiativeId) ? (
+                  <SelectItem value={initiativeId} className="py-2 pr-8 pl-2.5 text-xs">
+                    {initiativeId}
+                  </SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
 
@@ -366,6 +448,41 @@ export function IssueDetailPanel({
             </CollapsibleSection>
           ) : null}
 
+          <CollapsibleSection
+            title="Bloqueios"
+            count={blocking.length + blockedByReferences.length}
+          >
+            <BlockingSection
+              issue={issue}
+              blocking={blocking}
+              blockedByReferences={blockedByReferences}
+              candidates={allIssues}
+              disabled={busy}
+              onLink={(target) =>
+                void mutate(() =>
+                  provider.updateIssue(issue.projectId, issue.iid, {
+                    labels: withBlockingLink(issue, target),
+                  }),
+                )
+              }
+              onLinkReverse={(source) =>
+                void mutate(() =>
+                  provider.updateIssue(source.projectId, source.iid, {
+                    labels: withBlockingLink(source, issue),
+                  }),
+                )
+              }
+              onUnlink={(reference) =>
+                void mutate(() =>
+                  provider.updateIssue(reference.carrier.projectId, reference.carrier.iid, {
+                    labels: withoutBlockingLink(reference),
+                  }),
+                )
+              }
+              {...(onOpenIssue ? { onOpenIssue } : {})}
+            />
+          </CollapsibleSection>
+
           {mergeRequests.length ? (
             <CollapsibleSection title="Merge requests" count={mergeRequests.length}>
               <MergeRequestList mergeRequests={mergeRequests} />
@@ -406,12 +523,7 @@ export function IssueDetailPanel({
                       adornment: <LabelChip label={label} className="max-w-24" />,
                     }))}
                     selected={visibleLabels(labels)}
-                    onChange={(next) =>
-                      setLabels([
-                        ...labels.filter((label) => label.startsWith('horizon::')),
-                        ...next,
-                      ])
-                    }
+                    onChange={(next) => setLabels([...labels.filter(isHorizonLabel), ...next])}
                   />
                 </Field>
               </div>
@@ -572,7 +684,7 @@ export function IssueCreateForm({
   const metadata = useProjectMetadata(projectId)
   const people = metadata.users.length ? metadata.users : users
   const labelOptions = metadata.labels.length
-    ? metadata.labels.filter((label) => !label.startsWith('horizon::'))
+    ? metadata.labels.filter((label) => !isHorizonLabel(label))
     : availableLabels
   return (
     <form
@@ -649,6 +761,251 @@ export function IssueCreateForm({
         Criar issue
       </Button>
     </form>
+  )
+}
+
+/**
+ * The Issue this one hangs under. The list and the Kanban already say it; the
+ * Detail says it too, right above the title, and takes the reader there.
+ */
+function ParentReference({
+  parentIid,
+  parent,
+  webUrl,
+  onOpenIssue,
+}: {
+  parentIid: number
+  parent?: ProviderIssue | undefined
+  webUrl: string
+  onOpenIssue?: ((issue: ProviderIssue) => void) | undefined
+}) {
+  const properties = parent ? readIssueProperties(parent) : undefined
+  const body = (
+    <>
+      <CornerLeftUp aria-hidden className="size-3 flex-none text-muted-foreground" />
+      {properties ? (
+        <StatusDot status={properties.status} conflict={properties.conflicts.status} />
+      ) : null}
+      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">#{parentIid}</span>
+      <span className="min-w-0 truncate">{parent?.title ?? 'Issue pai'}</span>
+    </>
+  )
+  const className =
+    'mb-2 flex w-full min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-[11.5px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground'
+
+  // Without the parent in the Escopo there is nothing to open in place, so the
+  // reference falls back to the Provider.
+  if (!parent || !onOpenIssue)
+    return (
+      <a
+        href={webUrl.replace(/\/issues\/\d+(?:$|[?#])/, `/issues/${parentIid}`)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Abrir a issue pai #${parentIid}: ${parent?.title ?? ''}`.trim()}
+        title={`Abrir a issue pai #${parentIid}`}
+        className={className}
+      >
+        {body}
+      </a>
+    )
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenIssue(parent)}
+      aria-label={`Abrir a issue pai #${parentIid}: ${parent?.title ?? ''}`.trim()}
+      title={`Abrir a issue pai #${parentIid}`}
+      className={className}
+    >
+      {body}
+    </button>
+  )
+}
+
+/**
+ * Blocking links. GitLab CE has no native `blocks/is blocked by`, so Horizon
+ * writes the link as a label on the blocking Issue and reads both directions
+ * back out of the Escopo.
+ */
+function BlockingSection({
+  issue,
+  blocking,
+  blockedByReferences,
+  candidates,
+  disabled,
+  onLink,
+  onLinkReverse,
+  onUnlink,
+  onOpenIssue,
+}: {
+  issue: ProviderIssue
+  blocking: readonly BlockingReference[]
+  blockedByReferences: readonly BlockingReference[]
+  candidates: readonly ProviderIssue[]
+  disabled: boolean
+  onLink: (target: ProviderIssue) => void
+  onLinkReverse: (source: ProviderIssue) => void
+  onUnlink: (reference: BlockingReference) => void
+  onOpenIssue?: ((issue: ProviderIssue) => void) | undefined
+}) {
+  const [direction, setDirection] = useState<'blocks' | 'blocked-by'>('blocks')
+  const linked = new Set([
+    ...blocking.map((reference) => reference.target),
+    ...blockedByReferences.map((reference) => reference.source),
+  ])
+  const selectable = candidates.filter(
+    (candidate) =>
+      candidate.id !== issue.id && !linked.has(`${candidate.projectId}:${candidate.iid}`),
+  )
+
+  const row = (reference: BlockingReference, other: ProviderIssue | undefined, key: string) => (
+    <li key={reference.label} className="flex items-center gap-2 px-2.5 py-1.5">
+      {other ? (
+        <StatusDot
+          status={readIssueProperties(other).status}
+          conflict={readIssueProperties(other).conflicts.status}
+        />
+      ) : (
+        <OctagonX aria-hidden className="size-3.5 flex-none text-muted-foreground" />
+      )}
+      <button
+        type="button"
+        disabled={!other || !onOpenIssue}
+        onClick={() => other && onOpenIssue?.(other)}
+        className="min-w-0 flex-1 truncate text-left text-[12.5px] text-foreground disabled:cursor-default"
+      >
+        {other?.title ?? `Issue ${key} fora do Escopo`}
+      </button>
+      <span className="flex-none font-mono text-[10.5px] text-muted-foreground">#{key}</span>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        disabled={disabled}
+        aria-label="Remover bloqueio"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={() => onUnlink(reference)}
+      >
+        <X />
+      </Button>
+    </li>
+  )
+
+  return (
+    <div className="space-y-3">
+      {blocking.length ? (
+        <div>
+          <p className="mb-1 text-[11px] text-muted-foreground">Bloqueia</p>
+          <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border">
+            {blocking.map((reference) => row(reference, reference.targetIssue, reference.target))}
+          </ul>
+        </div>
+      ) : null}
+      {blockedByReferences.length ? (
+        <div>
+          <p className="mb-1 text-[11px] text-muted-foreground">É bloqueada por</p>
+          <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border">
+            {blockedByReferences.map((reference) =>
+              row(reference, reference.sourceIssue, reference.source),
+            )}
+          </ul>
+        </div>
+      ) : null}
+      {!blocking.length && !blockedByReferences.length ? (
+        <p className="text-[12.5px] text-muted-foreground">Nenhum bloqueio registrado.</p>
+      ) : null}
+
+      <div className="flex items-center gap-1.5">
+        <Select
+          value={direction}
+          disabled={disabled}
+          onValueChange={(value) => setDirection(value as 'blocks' | 'blocked-by')}
+        >
+          <SelectTrigger size="sm" aria-label="Direção do bloqueio" className="h-8 flex-none">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="blocks">Bloqueia</SelectItem>
+            <SelectItem value="blocked-by">É bloqueada por</SelectItem>
+          </SelectContent>
+        </Select>
+        <IssuePicker
+          issues={selectable}
+          disabled={disabled}
+          onPick={(picked) => (direction === 'blocks' ? onLink(picked) : onLinkReverse(picked))}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** A searchable one-shot issue chooser, used to point a blocking link at. */
+function IssuePicker({
+  issues,
+  disabled,
+  onPick,
+}: {
+  issues: readonly ProviderIssue[]
+  disabled: boolean
+  onPick: (issue: ProviderIssue) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLocaleLowerCase()
+  const visible = issues
+    .filter(
+      (issue) => !needle || `#${issue.iid} ${issue.title}`.toLocaleLowerCase().includes(needle),
+    )
+    .slice(0, 50)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="xs" variant="outline" disabled={disabled} className="flex-1">
+          <Plus aria-hidden />
+          Adicionar bloqueio
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[min(22rem,80vw)] p-0">
+        <div className="relative flex items-center border-b p-1.5">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-3.5 size-3 text-muted-foreground"
+          />
+          <Input
+            autoFocus
+            aria-label="Buscar issue para vincular"
+            placeholder="Buscar issue…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-7 border-0 bg-transparent pl-6 text-xs shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <div className="max-h-60 overflow-y-auto p-1">
+          {visible.map((issue) => (
+            <button
+              key={issue.id}
+              type="button"
+              onClick={() => {
+                onPick(issue)
+                setQuery('')
+                setOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-hover"
+            >
+              <StatusDot status={readIssueProperties(issue).status} />
+              <span className="min-w-0 flex-1 truncate">{issue.title}</span>
+              <span className="flex-none font-mono text-[10px] text-muted-foreground">
+                #{issue.iid}
+              </span>
+            </button>
+          ))}
+          {!visible.length ? (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+              Nenhuma issue encontrada.
+            </p>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
