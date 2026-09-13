@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -262,6 +262,62 @@ describe('InboxContent', () => {
     )
     expect(screen.getByText('Sub issue')).toBeInTheDocument()
     expect(screen.getByText('filho de #1')).toBeInTheDocument()
+  })
+
+  it('shows the parent of a sub-issue in the Detail and opens it in place', async () => {
+    const withChild = {
+      ...snapshot,
+      issues: [
+        { ...snapshot.issues[0]!, hasChildren: true },
+        { ...snapshot.issues[0]!, id: 3, iid: 3, title: 'Sub issue', parentIid: 1, labels: [] },
+      ],
+    }
+    const onIssueSelected = vi.fn()
+    render(
+      <InboxContent
+        snapshot={withChild}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        issueRef="1:3"
+        provider={{ listComments: vi.fn().mockResolvedValue([]) } as never}
+        refresh={vi.fn()}
+        refreshing={false}
+        onIssueSelected={onIssueSelected}
+      />,
+    )
+
+    const parentReference = await screen.findByRole('button', {
+      name: 'Abrir a issue pai #1: Backlog issue',
+    })
+    await userEvent.click(parentReference)
+    expect(onIssueSelected).toHaveBeenCalledWith('1:1')
+  })
+
+  it('creates a blocking link from the Detail and writes it as a label', async () => {
+    const updateIssue = vi.fn().mockResolvedValue(snapshot.issues[0])
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        issueRef="1:1"
+        provider={{ listComments: vi.fn().mockResolvedValue([]), updateIssue } as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    expect(await screen.findByText('Nenhum bloqueio registrado.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Adicionar bloqueio/ }))
+    const search = await screen.findByLabelText('Buscar issue para vincular')
+    const picker = search.closest('[data-slot="popover-content"]') as HTMLElement
+    await userEvent.click(within(picker).getByRole('button', { name: /Done issue/ }))
+
+    await waitFor(() =>
+      expect(updateIssue).toHaveBeenCalledWith(1, 1, { labels: ['horizon-blocks:1:1:1:2'] }),
+    )
   })
 
   it('keeps an old parent and old siblings when one direct child remains open', async () => {

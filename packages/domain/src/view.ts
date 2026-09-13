@@ -32,10 +32,12 @@ export type ViewRef =
   | { readonly _tag: 'Group'; readonly path: string }
   | { readonly _tag: 'Project'; readonly path: string }
   | { readonly _tag: 'Saved'; readonly id: string }
+  | { readonly _tag: 'Initiative'; readonly id: string }
 
 const GROUP_PREFIX = 'group:'
 const PROJECT_PREFIX = 'project:'
 const SAVED_PREFIX = 'saved:'
+const INITIATIVE_PREFIX = 'initiative:'
 
 /** The View Horizon opens on. */
 export const defaultViewRef: ViewRef = { _tag: 'Builtin', id: 'general' }
@@ -52,6 +54,9 @@ export const projectViewRef = (path: string): ViewRef => ({ _tag: 'Project', pat
 /** The View that shows every Issue under a group and its subgroups. */
 export const groupViewRef = (path: string): ViewRef => ({ _tag: 'Group', path })
 
+/** The View that shows every Issue of one Projeto, across repositories. */
+export const initiativeViewRef = (id: string): ViewRef => ({ _tag: 'Initiative', id })
+
 /** Decodes a URL search param into a View reference, falling back to the Inbox. */
 export const decodeViewRef = (input: unknown): ViewRef => {
   if (typeof input !== 'string') return defaultViewRef
@@ -62,6 +67,10 @@ export const decodeViewRef = (input: unknown): ViewRef => {
   if (input.startsWith(PROJECT_PREFIX)) {
     const path = input.slice(PROJECT_PREFIX.length)
     return path.length > 0 ? projectViewRef(path) : defaultViewRef
+  }
+  if (input.startsWith(INITIATIVE_PREFIX)) {
+    const id = input.slice(INITIATIVE_PREFIX.length)
+    return id.length > 0 ? initiativeViewRef(id) : defaultViewRef
   }
   if (input.startsWith(SAVED_PREFIX)) {
     const id = input.slice(SAVED_PREFIX.length)
@@ -84,6 +93,8 @@ export const viewRefToParam = (ref: ViewRef): string => {
       return PROJECT_PREFIX + ref.path
     case 'Saved':
       return SAVED_PREFIX + ref.id
+    case 'Initiative':
+      return INITIATIVE_PREFIX + ref.id
   }
 }
 

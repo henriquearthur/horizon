@@ -30,6 +30,24 @@ export const initiativeMembership = (labels: readonly string[]): string | undefi
   return ids[0]
 }
 
+/**
+ * A readable, stable id derived from the name. The id travels inside the label
+ * on every Issue, so it has to survive a round trip through GitLab untouched.
+ */
+export const initiativeIdFromName = (name: string): string =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+
+/** Every Projeto id the given labels mention, in the order they appear. */
+export const initiativeIdsFromLabels = (labels: readonly string[]): readonly string[] => [
+  ...new Set(labels.map(initiativeIdFromLabel).filter((id): id is string => Boolean(id))),
+]
+
 export interface InitiativeStore {
   list(): Promise<readonly Initiative[]>
   get(id: string): Promise<Initiative | undefined>

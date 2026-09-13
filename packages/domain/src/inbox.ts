@@ -1,7 +1,7 @@
 import type { ProviderIssue, ProviderProject } from './provider-read.ts'
 import type { ProviderReadContract, ProviderReadPage, ProviderLabel } from './provider-read.ts'
 import type { ProviderGroup, ProviderUser } from './provider.ts'
-import { readIssueProperties } from './properties.ts'
+import { isHorizonLabel, readIssueProperties } from './properties.ts'
 import type { IssuePriority, IssueStatus } from './properties.ts'
 
 export type InboxSort = 'updated' | 'created' | 'title'
@@ -74,7 +74,7 @@ export const groupIssues = (
   const out = new Map<string, ProviderIssue[]>()
   for (const i of issues) {
     const properties = readIssueProperties(i)
-    const commonLabels = i.labels.filter((label) => !label.startsWith('horizon::'))
+    const commonLabels = i.labels.filter((label) => !isHorizonLabel(label))
     const keys =
       group === 'project'
         ? [String(i.projectId)]

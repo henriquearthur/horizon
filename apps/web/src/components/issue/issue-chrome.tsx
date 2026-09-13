@@ -1,5 +1,20 @@
 import type { IssuePriority, IssueStatus, ProviderUser } from '@horizon/domain'
-import { CircleCheck, CircleDashed, CircleDot, TriangleAlert, UserRound } from 'lucide-react'
+import {
+  BookText,
+  Bug,
+  CircleCheck,
+  CircleDashed,
+  CircleDot,
+  FileText,
+  Layers,
+  Shapes,
+  Sparkles,
+  SquareCheckBig,
+  Ticket,
+  TriangleAlert,
+  UserRound,
+  Wrench,
+} from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 import {
@@ -38,21 +53,52 @@ export function LabelOverflow({ count }: { count: number }) {
   )
 }
 
+/**
+ * What kind of work item this is, read from the `type:*` labels the Provider
+ * carries. It reads as a quiet piece of chrome next to the title — an icon
+ * with its word — instead of competing with the coloured label chips.
+ */
+const TYPE_ICONS: Readonly<Record<string, { Icon: typeof Ticket; className: string }>> = {
+  spec: { Icon: FileText, className: 'text-violet-500' },
+  ticket: { Icon: Ticket, className: 'text-sky-500' },
+  bug: { Icon: Bug, className: 'text-rose-500' },
+  incident: { Icon: TriangleAlert, className: 'text-rose-500' },
+  feature: { Icon: Sparkles, className: 'text-emerald-500' },
+  epic: { Icon: Layers, className: 'text-fuchsia-500' },
+  task: { Icon: SquareCheckBig, className: 'text-teal-500' },
+  chore: { Icon: Wrench, className: 'text-amber-500' },
+  doc: { Icon: BookText, className: 'text-blue-500' },
+  docs: { Icon: BookText, className: 'text-blue-500' },
+}
+
 export function TypeBadge({ types, className }: { types: readonly string[]; className?: string }) {
-  const conflict = types.length > 1
-  const label = conflict ? '⚠ conflito' : (types[0] ?? 'Sem tipo')
+  if (!types.length) return null
   return (
-    <span
-      title={conflict ? `Tipos conflitantes: ${types.join(', ')}` : label}
-      aria-label={conflict ? 'Tipos conflitantes' : label}
-      className={cn(
-        'inline-flex h-[18px] items-center rounded-full bg-primary/12 px-2 text-[10px] font-medium text-primary',
-        conflict && 'bg-destructive/15 text-destructive',
-        className,
-      )}
-    >
-      {label}
-    </span>
+    <>
+      {types.map((type) => {
+        const presentation = TYPE_ICONS[type] ?? {
+          Icon: Shapes,
+          className: 'text-muted-foreground',
+        }
+        return (
+          <span
+            key={type}
+            title={`Tipo: ${type}`}
+            className={cn(
+              'inline-flex h-[18px] max-w-[9rem] shrink-0 items-center gap-1 rounded-md border border-border/80 bg-background px-1.5 text-[10px] font-medium text-muted-foreground',
+              className,
+            )}
+          >
+            <presentation.Icon
+              aria-hidden
+              className={cn('size-[11px] flex-none', presentation.className)}
+              strokeWidth={2.25}
+            />
+            <span className="truncate">{type}</span>
+          </span>
+        )
+      })}
+    </>
   )
 }
 

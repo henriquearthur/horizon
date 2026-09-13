@@ -6,6 +6,8 @@ import { InboxContent } from '~/components/inbox/inbox-content'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { resolveShellSearch } from '~/lib/search'
+import { initiativeIdsFromLabels } from '@horizon/domain'
+import { useInitiatives } from '~/db/use-initiatives'
 import { activeViewHeading } from '~/lib/view-heading'
 import { getSetupStatus } from '~/server/setup-functions'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
@@ -22,8 +24,16 @@ export const Route = createFileRoute('/')({
 
 function IssuesPage() {
   const { view, mode, query, issueRef } = resolveShellSearch(Route.useSearch())
-  const heading = activeViewHeading(view)
   const runtime = useHorizonRuntime()
+  const initiatives = useInitiatives(
+    (runtime.snapshot?.issues ?? []).flatMap((issue) => initiativeIdsFromLabels(issue.labels)),
+  )
+  const heading = activeViewHeading(
+    view,
+    view._tag === 'Initiative'
+      ? initiatives.find((initiative) => initiative.id === view.id)?.name
+      : undefined,
+  )
   const navigate = useNavigate({ from: '/' })
 
   return (
