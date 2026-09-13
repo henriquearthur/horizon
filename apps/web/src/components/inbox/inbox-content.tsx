@@ -179,6 +179,7 @@ export function InboxContent({
   )
   const toggleBulk = (issue: ProviderIssue) =>
     setBulkSelection((current) => {
+      setBulkResults(new Map())
       const next = new Set(current)
       const key = issueKey(issue)
       if (next.has(key)) next.delete(key)
@@ -190,6 +191,7 @@ export function InboxContent({
     value: string,
   ) => {
     setBulkRunning(true)
+    setBulkResults(new Map())
     const results = new Map<string, boolean>()
     const queue = [...selectedIssues]
     const worker = async () => {
@@ -571,7 +573,14 @@ export function InboxContent({
                     ))}
                   </SelectContent>
                 </Select>
-                <Button variant="ghost" size="xs" onClick={() => setBulkSelection(new Set())}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setBulkSelection(new Set())
+                    setBulkResults(new Map())
+                  }}
+                >
                   Limpar seleção
                 </Button>
               </>

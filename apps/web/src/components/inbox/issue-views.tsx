@@ -194,15 +194,7 @@ function IssueRow({
         <span aria-hidden className="size-5 flex-none" />
       )}
       <div
-        role="button"
-        tabIndex={0}
         onClick={onOpen}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            onOpen()
-          }
-        }}
         aria-current={selected ? 'true' : undefined}
         className={cn(
           'group relative flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-xl py-2.5 pr-3 pl-2 text-left transition-colors duration-150',
@@ -300,8 +292,6 @@ function IssueCard({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
       draggable={draggable}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'move'
@@ -310,12 +300,6 @@ function IssueCard({
       }}
       onDragEnd={onDragEnd}
       onClick={onOpen}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onOpen()
-        }
-      }}
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'flex w-full cursor-pointer flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-left shadow-xs transition-all duration-200',
