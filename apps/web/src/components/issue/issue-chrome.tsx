@@ -182,6 +182,7 @@ export function IssueStatusMenu({
   disabled = false,
   onChange,
   className,
+  label,
 }: {
   status: IssueStatus
   conflict?: boolean
@@ -190,6 +191,7 @@ export function IssueStatusMenu({
   disabled?: boolean
   onChange: (status: IssueStatus) => void
   className?: string
+  label?: string
 }) {
   return (
     <DropdownMenu>
@@ -200,7 +202,10 @@ export function IssueStatusMenu({
           aria-label={`Alterar status: ${status}`}
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'inline-flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+            cn(
+              'inline-flex size-6 shrink-0 items-center justify-center gap-1 rounded-md transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+              label && 'w-auto px-2',
+            ),
             className,
           )}
         >
@@ -210,6 +215,7 @@ export function IssueStatusMenu({
             blocked={blocked}
             {...(blockedTitle ? { blockedTitle } : {})}
           />
+          {label ? <span className="text-sm">{label}</span> : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

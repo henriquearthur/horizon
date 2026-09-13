@@ -9,7 +9,7 @@ import { readIssueProperties } from './properties.ts'
  * GitLab scoped label, and GitLab keeps only one label per scope, so an Issue
  * could never block more than one other Issue.
  */
-export const BLOCKING_LABEL_PREFIX = 'horizon-blocks:'
+export const BLOCKING_LABEL_PREFIX = 'horizon::blocked::'
 
 export const blockingLabel = (
   source: Pick<ProviderIssue, 'projectId' | 'iid'>,
@@ -30,7 +30,7 @@ export interface BlockingReference {
 }
 
 const key = (projectId: number, iid: number) => `${projectId}:${iid}`
-const pattern = /^horizon-blocks:(\d+):(\d+):(\d+):(\d+)$/
+const pattern = /^(?:horizon::blocked::|horizon-blocks:)(\d+):(\d+):(\d+):(\d+)$/
 
 /** `projectId:iid`, the key both ends of a link are written with. */
 export const issueRefKey = (issue: Pick<ProviderIssue, 'projectId' | 'iid'>): string =>

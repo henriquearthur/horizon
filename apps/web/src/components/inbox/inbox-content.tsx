@@ -206,7 +206,12 @@ export function InboxContent({
           ).values(),
         ]
       : found
-    return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
+    const result = sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
+    return [...result].sort(
+      (a, b) =>
+        Number(readIssueProperties(a).status === 'Concluído') -
+        Number(readIssueProperties(b).status === 'Concluído'),
+    )
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
   /**
    * A sub-issue is shown under its parent, never twice: when both are in the
@@ -287,6 +292,19 @@ export function InboxContent({
   ]
 
   const filterDefinitions: readonly FilterDefinition[] = [
+    {
+      label: 'Concluídos',
+      value: filters.hideCompleted ? 'true' : '',
+      onChange: (value) => updateFilter('hideCompleted', value === 'true' ? true : undefined),
+      options: [
+        {
+          value: 'true',
+          label: 'Ocultar concluídos',
+          count: snapshot.issues.filter((i) => readIssueProperties(i).status !== 'Concluído')
+            .length,
+        },
+      ],
+    },
     {
       label: 'Status',
       value: filters.status ?? '',

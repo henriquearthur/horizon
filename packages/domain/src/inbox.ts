@@ -14,6 +14,7 @@ export interface InboxFilters {
   labels?: readonly string[]
   status?: IssueStatus
   priority?: IssuePriority
+  hideCompleted?: boolean
 }
 
 export const filterIssues = (
@@ -34,7 +35,8 @@ export const filterIssues = (
       (!filters.assignee || i.assignees.some((a) => a.username === filters.assignee)) &&
       (!filters.labels?.length || filters.labels.every((l) => i.labels.includes(l))) &&
       (!filters.status || readIssueProperties(i).status === filters.status) &&
-      (!filters.priority || readIssueProperties(i).priority === filters.priority),
+      (!filters.priority || readIssueProperties(i).priority === filters.priority) &&
+      (!filters.hideCompleted || readIssueProperties(i).status !== 'Concluído'),
   )
 
 export const searchIssues = (

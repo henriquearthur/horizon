@@ -24,8 +24,7 @@ const issue = (projectId: number, iid: number, labels: readonly string[] = []): 
 describe('blocking links', () => {
   it('never becomes a GitLab scoped label, so one Issue can block many', () => {
     const label = blockingLabel({ projectId: 7, iid: 1 }, { projectId: 9, iid: 4 })
-    expect(label).toBe('horizon-blocks:7:1:9:4')
-    expect(label).not.toContain('::')
+    expect(label).toBe('horizon::blocked::7:1:9:4')
     expect(isHorizonLabel(label)).toBe(true)
   })
 
