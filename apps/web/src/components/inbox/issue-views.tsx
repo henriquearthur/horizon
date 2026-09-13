@@ -40,6 +40,8 @@ export interface IssueViewsProps {
   readonly onStatusChange?: (issue: ProviderIssue, status: IssueStatus) => void
   /** Sub-issues rolled up under each Issue, keyed by `projectId:iid`. */
   readonly childrenOf?: ReadonlyMap<string, readonly ProviderIssue[]>
+  /** `projectId:iid` of the Issues an open Bloqueio still holds back. */
+  readonly blockedKeys?: ReadonlySet<string>
 }
 
 export const issueKey = (issue: Pick<ProviderIssue, 'projectId' | 'iid'>): string =>
@@ -143,6 +145,7 @@ function IssueRow({
   code,
   selected,
   onOpen,
+  blocked = false,
   childCount = 0,
   doneChildren = 0,
   expanded,
@@ -155,6 +158,8 @@ function IssueRow({
   code: string
   selected: boolean
   onOpen: () => void
+  /** An open Bloqueio still holds this Issue back. */
+  blocked?: boolean
   childCount?: number
   doneChildren?: number
   expanded?: boolean
@@ -202,6 +207,8 @@ function IssueRow({
           <IssueStatusMenu
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             onChange={onStatusChange}
             className="-ml-1"
           />
@@ -209,6 +216,8 @@ function IssueRow({
           <StatusDot
             status={properties.status}
             conflict={properties.conflicts.status}
+            blocked={blocked}
+            blockedTitle={`${properties.status} · bloqueada`}
             className="mt-[5px]"
           />
         )}
@@ -361,6 +370,7 @@ export function IssueViews({
   selectedId,
   onStatusChange,
   childrenOf,
+  blockedKeys,
 }: IssueViewsProps) {
   const [dragging, setDragging] = useState<number>()
   const [dragOver, setDragOver] = useState<string>()
@@ -370,6 +380,7 @@ export function IssueViews({
     projectPath(projectById.get(issue.projectId), issue.projectId)
   const codeFor = (issue: ProviderIssue) => issueCode(issue, projectById.get(issue.projectId))
   const childrenFor = (issue: ProviderIssue) => childrenOf?.get(issueKey(issue)) ?? []
+  const isBlocked = (issue: ProviderIssue) => blockedKeys?.has(issueKey(issue)) ?? false
   const toggle = (key: string) =>
     setExpanded((current) => {
       const next = new Set(current)
@@ -514,6 +525,7 @@ export function IssueViews({
           code={codeFor(issue)}
           selected={issue.id === selectedId}
           onOpen={() => onOpen(issue)}
+          blocked={isBlocked(issue)}
           childCount={children.length}
           doneChildren={doneCount(children)}
           expanded={open}

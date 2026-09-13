@@ -5,6 +5,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleDot,
+  CircleSlash,
   FileText,
   Layers,
   Shapes,
@@ -114,12 +115,18 @@ export function TypeMark({
 export function StatusDot({
   status,
   conflict = false,
+  blocked = false,
+  blockedTitle,
   className,
   title,
 }: {
   status: IssueStatus
   /** Set when the Issue carries more than one Status Label Horizon. */
   conflict?: boolean
+  /** Set when a Bloqueio still holds this Issue back. */
+  blocked?: boolean
+  /** What is holding it back, e.g. `Bloqueada por #12`. */
+  blockedTitle?: string
   className?: string
   title?: string
 }) {
@@ -136,6 +143,21 @@ export function StatusDot({
         <TriangleAlert aria-hidden className="size-[9px]" strokeWidth={3} />
       </span>
     )
+  // A blocked Issue says so where its state already is: the dot itself becomes
+  // the barred circle, the way GitHub marks a blocked sub-issue.
+  if (blocked) {
+    const label = blockedTitle ?? `${status} · bloqueada`
+    return (
+      <span title={label} className="inline-flex shrink-0">
+        <CircleSlash
+          aria-label={label}
+          aria-hidden
+          className={cn('size-3.5 text-amber-600 dark:text-amber-500', className)}
+          strokeWidth={2.25}
+        />
+      </span>
+    )
+  }
   const Icon =
     status === 'Concluído' ? CircleCheck : status === 'Em andamento' ? CircleDot : CircleDashed
   return (
@@ -154,12 +176,16 @@ export function StatusDot({
 export function IssueStatusMenu({
   status,
   conflict = false,
+  blocked = false,
+  blockedTitle,
   disabled = false,
   onChange,
   className,
 }: {
   status: IssueStatus
   conflict?: boolean
+  blocked?: boolean
+  blockedTitle?: string
   disabled?: boolean
   onChange: (status: IssueStatus) => void
   className?: string
@@ -177,7 +203,12 @@ export function IssueStatusMenu({
             className,
           )}
         >
-          <StatusDot status={status} conflict={conflict} />
+          <StatusDot
+            status={status}
+            conflict={conflict}
+            blocked={blocked}
+            {...(blockedTitle ? { blockedTitle } : {})}
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

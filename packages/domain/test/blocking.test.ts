@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   blockedBy,
+  blockedIssueKeys,
   blockingLabel,
   blocks,
   isHorizonLabel,
@@ -50,5 +51,28 @@ describe('blocking links', () => {
 
     const [reference] = blocks(linked, [linked, issue(9, 4)])
     expect(withoutBlockingLink(reference!)).toEqual(['backend'])
+  })
+})
+
+describe('blockedIssueKeys', () => {
+  const done = 'horizon::status::Concluído'
+
+  it('marks an Issue whose blocker is still open', () => {
+    const blocker = issue(7, 1, [blockingLabel({ projectId: 7, iid: 1 }, { projectId: 9, iid: 4 })])
+    const blocked = issue(9, 4)
+    expect([...blockedIssueKeys([blocker, blocked])]).toEqual(['9:4'])
+  })
+
+  it('lets it go as soon as the blocker is concluded', () => {
+    const blocker = issue(7, 1, [
+      blockingLabel({ projectId: 7, iid: 1 }, { projectId: 9, iid: 4 }),
+      done,
+    ])
+    expect([...blockedIssueKeys([blocker, issue(9, 4)])]).toEqual([])
+  })
+
+  it('says nothing about a blocker outside the Escopo', () => {
+    const blocked = issue(9, 4, [blockingLabel({ projectId: 7, iid: 1 }, { projectId: 9, iid: 4 })])
+    expect([...blockedIssueKeys([blocked])]).toEqual([])
   })
 })

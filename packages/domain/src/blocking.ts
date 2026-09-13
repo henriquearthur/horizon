@@ -1,4 +1,5 @@
 import type { ProviderIssue } from './provider-read.ts'
+import { readIssueProperties } from './properties.ts'
 
 /**
  * Stable label used for a cross-project blocking link, written on the blocking
@@ -84,3 +85,19 @@ export const withBlockingLink = (
 /** Drops one link from the labels of the Issue that carries it. */
 export const withoutBlockingLink = (reference: BlockingReference): readonly string[] =>
   reference.carrier.labels.filter((label) => label !== reference.label)
+
+/**
+ * The Issues that cannot start yet: something blocks them and that blocker is
+ * still open. A blocker outside the Escopo says nothing about its own state,
+ * so it never marks the Issue as blocked — an unreachable link is shown as
+ * such where the links themselves are listed.
+ */
+export const blockedIssueKeys = (issues: readonly ProviderIssue[]): ReadonlySet<string> => {
+  const blocked = new Set<string>()
+  for (const reference of blockingReferences(issues)) {
+    if (!reference.sourceIssue) continue
+    if (readIssueProperties(reference.sourceIssue).status === 'Concluído') continue
+    blocked.add(reference.target)
+  }
+  return blocked
+}

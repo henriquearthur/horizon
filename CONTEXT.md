@@ -69,7 +69,9 @@ por` in the other. GitLab CE has no native link, so Horizon writes it as a
 label on the blocking Issue: `horizon-blocks:<projeto>:<iid>:<projeto>:<iid>`.
 The single colon is deliberate — see
 `docs/adr/0002-bloqueio-nao-usa-scoped-label.md`. A link whose other end is
-outside the Escopo is shown as unreachable instead of disappearing.
+outside the Escopo is shown as unreachable instead of disappearing. While a
+blocker is still open, the blocked Issue wears a barred circle in place of its
+Status dot wherever sub-issues are listed.
 
 ## Projeto
 

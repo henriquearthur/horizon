@@ -383,8 +383,7 @@ describe('InboxContent', () => {
     await userEvent.click(screen.getByText('Backlog issue'))
     expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Responsáveis' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Atribuir a mim' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Atribuir a mim' }))
     expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
   })
 })

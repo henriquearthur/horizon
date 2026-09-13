@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
+  blockedIssueKeys,
   filterIssues,
   initiativeIdsFromLabels,
   isHorizonLabel,
@@ -221,6 +222,8 @@ export function InboxContent({
     for (const [key, children] of map) map.set(key, [...children].sort(byAge))
     return map
   }, [issues])
+  /** Bloqueios are read once over the whole Escopo, not per row. */
+  const blockedKeys = useMemo(() => blockedIssueKeys(snapshot.issues), [snapshot.issues])
   const roots = useMemo(() => {
     const present = new Set(issues.map((issue) => issueKey(issue)))
     return issues.filter(
@@ -593,6 +596,7 @@ export function InboxContent({
             projects={snapshot.projects}
             groups={grouped}
             childrenOf={childrenOf}
+            blockedKeys={blockedKeys}
             onOpen={openIssue}
             selectedId={selected?.id}
             onStatusChange={(issue, status) => void changeStatus(issue, status)}
