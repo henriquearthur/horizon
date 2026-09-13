@@ -90,7 +90,12 @@ const metadataByProject = new Map<number, TimedCache<ProjectMetadata>>()
  * read on demand: reading them for every project of the Escopo used to cost
  * two GitLab calls per repository on every snapshot.
  */
-export const projectMetadata = (projectId: number): Promise<ProjectMetadata> => {
+export const projectMetadata = async (projectId: number): Promise<ProjectMetadata> => {
+  // The browser may ask for any project id, and the server token usually reads
+  // far more than the Escopo. Only projects in the Escopo are answered.
+  const projects = await scopedProjects()
+  if (!projects.some((project) => project.id === projectId))
+    throw new Error('Projeto fora do Escopo.')
   const existing = metadataByProject.get(projectId)
   if (existing) return existing.get()
   const cache = new TimedCache<ProjectMetadata>(CATALOG_TTL_MS, async () => {

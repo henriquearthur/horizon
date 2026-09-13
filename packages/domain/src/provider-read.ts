@@ -81,6 +81,14 @@ const user = (v: any): ProviderUser | undefined =>
         ...(typeof v.avatar_url === 'string' ? { avatarUrl: v.avatar_url } : {}),
       }
     : undefined
+/** At most this many pages are requested up front. */
+const MAX_PARALLEL_PAGES = 200
+
+const totalPagesOf = (header: string | null | undefined): number | undefined => {
+  const value = Number(header)
+  return Number.isSafeInteger(value) && value > 0 && value <= MAX_PARALLEL_PAGES ? value : undefined
+}
+
 const page = <T>(
   items: readonly T[],
   header: string | null,
@@ -88,7 +96,9 @@ const page = <T>(
 ): ProviderReadPage<T> => ({
   items,
   ...(header && Number(header) > 0 ? { nextPage: Number(header) } : {}),
-  ...(total && Number(total) > 0 ? { totalPages: Number(total) } : {}),
+  // A header that is not a sane page count is ignored: the caller then walks
+  // `nextPage` instead of allocating whatever the Provider claimed.
+  ...(totalPagesOf(total) === undefined ? {} : { totalPages: totalPagesOf(total)! }),
 })
 
 export class GitLabReadProvider implements ProviderReadContract {
@@ -267,12 +277,17 @@ export class GitLabReadProvider implements ProviderReadContract {
     batch: readonly { readonly id: number; readonly fullPath: string }[],
     result: Map<number, ProviderHierarchy>,
   ): Promise<void> {
-    {
-      const query = `query{${batch
+    // A project with more than one page of work items keeps its cursor here, so
+    // a repository with hundreds of items does not lose the links past the
+    // first page — its children would come back as top level Issues.
+    let pending = batch.map((project) => ({ project, after: undefined as string | undefined }))
+    for (let round = 0; pending.length && round < 50; round += 1) {
+      const query = `query{${pending
         .map(
-          (project, index) =>
+          ({ project, after }, index) =>
             `p${index}: project(fullPath:${JSON.stringify(project.fullPath)})` +
-            `{workItems(types:[ISSUE,TASK],first:100){nodes{iid widgets{... on WorkItemWidgetHierarchy{hasChildren parent{iid}}}}}}`,
+            `{workItems(types:[ISSUE,TASK],first:100${after ? `,after:${JSON.stringify(after)}` : ''})` +
+            `{pageInfo{hasNextPage endCursor} nodes{iid widgets{... on WorkItemWidgetHierarchy{hasChildren parent{iid}}}}}}`,
         )
         .join(' ')}}`
       let payload: any
@@ -287,11 +302,14 @@ export class GitLabReadProvider implements ProviderReadContract {
         // Hierarchy only enriches the Issues; never fail a read of the Escopo for it.
         return
       }
-      batch.forEach((project, index) => {
-        const nodes = payload?.data?.[`p${index}`]?.workItems?.nodes
+      const next: typeof pending = []
+      pending.forEach(({ project }, index) => {
+        const workItems = payload?.data?.[`p${index}`]?.workItems
+        const nodes = workItems?.nodes
         if (!Array.isArray(nodes)) return
-        const parentOf = new Map<number, number>()
-        const withChildren = new Set<number>()
+        const links = result.get(project.id)
+        const parentOf = new Map<number, number>(links?.parentOf ?? [])
+        const withChildren = new Set<number>(links?.withChildren ?? [])
         for (const node of nodes) {
           const iid = Number(node?.iid)
           if (!Number.isInteger(iid)) continue
@@ -303,7 +321,10 @@ export class GitLabReadProvider implements ProviderReadContract {
           if (Number.isInteger(parent)) parentOf.set(iid, parent)
         }
         result.set(project.id, { parentOf, withChildren })
+        if (workItems.pageInfo?.hasNextPage === true && workItems.pageInfo.endCursor)
+          next.push({ project, after: String(workItems.pageInfo.endCursor) })
       })
+      pending = next
     }
   }
 
