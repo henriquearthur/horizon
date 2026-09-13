@@ -45,6 +45,7 @@ export function IssueDetailPanel({
   currentUser,
   users = [],
   availableLabels = [],
+  issueHref,
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
@@ -56,6 +57,7 @@ export function IssueDetailPanel({
   currentUser?: ProviderUser
   users?: readonly ProviderUser[]
   availableLabels?: readonly string[]
+  issueHref: (iid: number) => string
 }) {
   const [editing, setEditing] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
@@ -77,14 +79,21 @@ export function IssueDetailPanel({
   useEffect(() => {
     let active = true
     setMergeRequests([])
-    void provider.listMergeRequests?.(issue.projectId, issue.iid)
-      .then((items) => { if (active) setMergeRequests(items) })
-      .catch(() => { if (active) setMergeRequests([]) })
+    void provider
+      .listMergeRequests?.(issue.projectId, issue.iid)
+      .then((items) => {
+        if (active) setMergeRequests(items)
+      })
+      .catch(() => {
+        if (active) setMergeRequests([])
+      })
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
     setLabels(issue.labels)
-    return () => { active = false }
+    return () => {
+      active = false
+    }
   }, [issue, provider])
 
   const mutate = async (action: () => Promise<ProviderIssue>) => {
@@ -130,362 +139,390 @@ export function IssueDetailPanel({
   const assignToMe = () => {
     if (!currentUser || assigneeIds.includes(currentUser.id)) return
     const next = [...assigneeIds, currentUser.id]
-    void mutate(() =>
-      provider.updateIssue(issue.projectId, issue.iid, { assigneeIds: next }),
-    ).then((saved) => {
-      if (saved) setAssigneeIds(next)
-    })
+    void mutate(() => provider.updateIssue(issue.projectId, issue.iid, { assigneeIds: next })).then(
+      (saved) => {
+        if (saved) setAssigneeIds(next)
+      },
+    )
   }
 
   return (
     <>
-    <button
-      type="button"
-      aria-label="Fechar detalhes"
-      className="fixed inset-0 z-40 cursor-default bg-foreground/8 backdrop-blur-[1px]"
-      onClick={onClose}
-    />
-    <aside
-      aria-label="Detalhes do issue"
-      aria-busy={loading || busy}
-      className="animate-panel-in fixed inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
-    >
-      {(loading || busy) && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-l-2xl bg-card/45">
-          <LoaderCircle className="size-5 animate-spin text-primary" aria-label="Carregando" />
-        </div>
-      )}
-      <header className="flex-none border-b px-5 pt-3.5 pb-4">
-        <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
-          <span className="font-semibold text-primary">#{issue.iid}</span>
-          <span className="min-w-0 flex-1 truncate">{issuePath(issue.webUrl)}</span>
-          <Button variant="ghost" size="icon-xs" asChild>
-            <a href={issue.webUrl} target="_blank" rel="noreferrer" aria-label="Abrir no GitLab">
-              <ExternalLink />
-            </a>
-          </Button>
-          <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Fechar detalhes">
-            <X />
-          </Button>
-        </div>
-
-        {editing ? (
-          <Input
-            aria-label="Título"
-            className="mb-3 h-9 text-[15px] font-semibold"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        ) : (
-          <h2 className="mb-3 text-[17px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
-            {issue.title}
-          </h2>
-        )}
-
-        {shownLabels.length ? (
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {shownLabels.map((label) => (
-              <LabelChip key={label} label={label} />
-            ))}
+      <button
+        type="button"
+        aria-label="Fechar detalhes"
+        className="fixed inset-0 z-40 cursor-default bg-foreground/8 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <aside
+        aria-label="Detalhes do issue"
+        aria-busy={loading || busy}
+        className="animate-panel-in fixed inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
+      >
+        {(loading || busy) && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-l-2xl bg-card/45">
+            <LoaderCircle className="size-5 animate-spin text-primary" aria-label="Carregando" />
           </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={properties.conflicts.status ? '' : properties.status}
-            disabled={busy}
-            onValueChange={(value) =>
-              void mutate(() =>
-                provider.updateIssueProperties(issue.projectId, issue.iid, {
-                  status: value as (typeof STATUS_VALUES)[number],
-                }),
-              )
-            }
-          >
-            <SelectTrigger size="sm" aria-label="Status" className="gap-2 rounded-full">
-              <SelectValue placeholder="Corrigir conflito…">
-                <StatusDot status={properties.status} />
-                <span>{properties.status}</span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_VALUES.map((status) => (
-                <SelectItem key={status} value={status}>
-                  <StatusDot status={status} />
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}
-            disabled={busy}
-            onValueChange={(value) =>
-              void mutate(() =>
-                provider.updateIssueProperties(issue.projectId, issue.iid, {
-                  priority: value as (typeof PRIORITY_VALUES)[number],
-                }),
-              )
-            }
-          >
-            <SelectTrigger
-              size="sm"
-              aria-label="Prioridade"
-              className="min-w-32 gap-2 rounded-full px-3"
-            >
-              <SelectValue placeholder="Corrigir conflito…">
-                <PriorityBadge
-                  priority={properties.priority}
-                  conflict={properties.conflicts.priority}
-                />
-                <span className="text-muted-foreground">
-                  {properties.priority ?? 'Sem prioridade'}
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {PRIORITY_VALUES.map((priority) => (
-                <SelectItem key={priority} value={priority}>
-                  <PriorityBadge priority={priority} />
-                  {priority}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="flex-1" />
-
-          <Button
-            size="xs"
-            variant={editing ? 'secondary' : 'ghost'}
-            onClick={() => setEditing(!editing)}
-          >
-            <Pencil aria-hidden />
-            {editing ? 'Cancelar' : 'Editar'}
-          </Button>
-          {editing ? (
-            <Button size="xs" onClick={() => void save()} disabled={busy}>
-              Salvar
+        )}
+        <header className="flex-none border-b px-5 pt-3.5 pb-4">
+          <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
+            <span className="font-semibold text-primary">#{issue.iid}</span>
+            <span className="min-w-0 flex-1 truncate">{issuePath(issue.webUrl)}</span>
+            <Button variant="ghost" size="icon-xs" asChild>
+              <a href={issue.webUrl} target="_blank" rel="noreferrer" aria-label="Abrir no GitLab">
+                <ExternalLink />
+              </a>
             </Button>
+            <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Fechar detalhes">
+              <X />
+            </Button>
+          </div>
+
+          {editing ? (
+            <Input
+              aria-label="Título"
+              className="mb-3 h-9 text-[15px] font-semibold"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          ) : (
+            <h2 className="mb-3 text-[17px] leading-[1.3] font-semibold tracking-tight text-pretty text-foreground">
+              {issue.title}
+            </h2>
+          )}
+
+          {shownLabels.length ? (
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {shownLabels.map((label) => (
+                <LabelChip key={label} label={label} />
+              ))}
+            </div>
           ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={properties.conflicts.status ? '' : properties.status}
+              disabled={busy}
+              onValueChange={(value) =>
+                void mutate(() =>
+                  provider.updateIssueProperties(issue.projectId, issue.iid, {
+                    status: value as (typeof STATUS_VALUES)[number],
+                  }),
+                )
+              }
+            >
+              <SelectTrigger size="sm" aria-label="Status" className="gap-2 rounded-full">
+                <SelectValue placeholder="Corrigir conflito…">
+                  <StatusDot status={properties.status} />
+                  <span>{properties.status}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_VALUES.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    <StatusDot status={status} />
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}
+              disabled={busy}
+              onValueChange={(value) =>
+                void mutate(() =>
+                  provider.updateIssueProperties(issue.projectId, issue.iid, {
+                    priority: value as (typeof PRIORITY_VALUES)[number],
+                  }),
+                )
+              }
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Prioridade"
+                className="h-8 min-w-[148px] gap-2 rounded-lg border-input bg-background px-2.5 shadow-none"
+              >
+                <SelectValue placeholder="Corrigir conflito…">
+                  <PriorityBadge
+                    priority={properties.priority}
+                    conflict={properties.conflicts.priority}
+                  />
+                  <span className="text-foreground">{properties.priority ?? 'Sem prioridade'}</span>
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent className="min-w-[168px] p-1">
+                {PRIORITY_VALUES.map((priority) => (
+                  <SelectItem key={priority} value={priority} className="py-2 pr-8 pl-2.5 text-xs">
+                    <PriorityBadge priority={priority} />
+                    {priority}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex-1" />
+
+            <Button
+              size="xs"
+              variant={editing ? 'secondary' : 'ghost'}
+              onClick={() => setEditing(!editing)}
+            >
+              <Pencil aria-hidden />
+              {editing ? 'Cancelar' : 'Editar'}
+            </Button>
+            {editing ? (
+              <Button size="xs" onClick={() => void save()} disabled={busy}>
+                Salvar
+              </Button>
+            ) : null}
+          </div>
+
+          {properties.conflicts.status || properties.conflicts.priority ? (
+            <p
+              role="alert"
+              className="mt-2.5 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-[11.5px] text-destructive"
+            >
+              Há labels Horizon conflitantes. Escolha um valor para corrigir.
+            </p>
+          ) : null}
+        </header>
+
+        <dl className="grid flex-none grid-cols-2 gap-x-5 gap-y-2 border-b px-5 py-3.5 text-[11.5px]">
+          <DetailMeta label="Responsável">
+            {issue.assignees.length ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UserAvatar user={issue.assignees[0]} size="xs" />
+                <span className="truncate">
+                  {issue.assignees.map((user) => user.name).join(', ')}
+                </span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Não atribuído</span>
+            )}
+          </DetailMeta>
+          {currentUser && !issue.assignees.some((user) => user.id === currentUser.id) ? (
+            <DetailMeta label="Ação">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={assignToMe}
+                className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-50"
+              >
+                <UserPlus aria-hidden className="size-3" />
+                Atribuir a mim
+              </button>
+            </DetailMeta>
+          ) : null}
+          <DetailMeta label="Autor">
+            {issue.author ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UserAvatar user={issue.author} size="xs" />
+                <span className="truncate">{issue.author.name}</span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </DetailMeta>
+          <DetailMeta label="Atualizado">
+            <span title={absoluteTime(issue.updatedAt)}>
+              {relativeTime(issue.updatedAt) ?? '—'}
+            </span>
+          </DetailMeta>
+          <DetailMeta label="Criado">
+            <span title={absoluteTime(issue.createdAt)}>
+              {relativeTime(issue.createdAt) ?? '—'}
+            </span>
+          </DetailMeta>
+          {mergeRequests.length ? (
+            <DetailMeta label="Merge requests">
+              <span className="flex items-center gap-1.5 text-primary">
+                <GitMerge aria-hidden className="size-3" />
+                {mergeRequests.map((mr) => (
+                  <a
+                    key={mr.id}
+                    href={mr.webUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate hover:underline"
+                  >
+                    !{mr.iid} {mr.title}
+                  </a>
+                ))}
+              </span>
+            </DetailMeta>
+          ) : null}
+        </dl>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
+          <CollapsibleSection title="Descrição">
+            {editing ? (
+              <div className="mb-6 space-y-3">
+                <Textarea
+                  aria-label="Descrição"
+                  className="min-h-36 text-[12.5px] leading-relaxed"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <Field label="Responsáveis">
+                  <MultiSelect
+                    label="Responsáveis"
+                    placeholder="Ninguém"
+                    searchPlaceholder="Buscar pessoa…"
+                    options={users.map((user) => ({
+                      value: String(user.id),
+                      label: `${user.name} · @${user.username}`,
+                      adornment: <UserAvatar user={user} size="xs" />,
+                    }))}
+                    selected={assigneeIds.map(String)}
+                    onChange={(next) => setAssigneeIds(next.map(Number))}
+                  />
+                </Field>
+                <Field label="Labels">
+                  <MultiSelect
+                    label="Labels"
+                    placeholder="Sem labels"
+                    searchPlaceholder="Buscar label…"
+                    options={availableLabels.map((label) => ({
+                      value: label,
+                      label,
+                      adornment: <LabelChip label={label} className="max-w-24" />,
+                    }))}
+                    selected={visibleLabels(labels)}
+                    onChange={(next) =>
+                      setLabels([
+                        ...labels.filter((label) => label.startsWith('horizon::')),
+                        ...next,
+                      ])
+                    }
+                  />
+                </Field>
+              </div>
+            ) : (
+              <Markdown className="text-[13px] leading-[1.7] text-foreground" issueHref={issueHref}>
+                {issue.description}
+              </Markdown>
+            )}
+          </CollapsibleSection>
+
+          <Tabs defaultValue="discussion" className="mt-6">
+            <TabsList className="mb-4">
+              <TabsTrigger value="discussion">Discussão ({discussion.length})</TabsTrigger>
+              <TabsTrigger value="activity">Atividade ({activity.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="discussion">
+              <CollapsibleSection title="Comentários" count={discussion.length} className="mb-0">
+                <CommentList
+                  comments={discussion}
+                  empty="Nenhum comentário ainda."
+                  issueHref={issueHref}
+                />
+              </CollapsibleSection>
+            </TabsContent>
+            <TabsContent value="activity">
+              <CollapsibleSection title="Histórico" count={activity.length} className="mb-0">
+                <CommentList
+                  comments={activity}
+                  empty="Nenhuma atividade registrada."
+                  activity
+                  issueHref={issueHref}
+                />
+              </CollapsibleSection>
+            </TabsContent>
+          </Tabs>
+          {/* comments are rendered in their respective tabs above */}
+          {false &&
+            comments.map((c) => (
+              <article key={c.id} className="mb-5 flex gap-2.5">
+                <UserAvatar user={c.author} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-baseline gap-2">
+                    <span className="text-[12.5px] font-semibold text-foreground">
+                      {c.author?.name ?? 'GitLab'}
+                    </span>
+                    <time
+                      className="font-mono text-[10.5px] text-muted-foreground"
+                      dateTime={c.createdAt}
+                      title={absoluteTime(c.createdAt)}
+                    >
+                      {relativeTime(c.createdAt) ?? ''}
+                    </time>
+                  </div>
+                  <Markdown className="text-[12.5px] leading-[1.65] text-foreground" empty="">
+                    {c.body}
+                  </Markdown>
+                </div>
+              </article>
+            ))}
         </div>
 
-        {properties.conflicts.status || properties.conflicts.priority ? (
+        {error && (
           <p
             role="alert"
-            className="mt-2.5 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-[11.5px] text-destructive"
+            className="border-t bg-destructive/10 px-5 py-2.5 text-xs text-destructive"
           >
-            Há labels Horizon conflitantes. Escolha um valor para corrigir.
+            {error}
           </p>
-        ) : null}
-      </header>
+        )}
 
-      <dl className="grid flex-none grid-cols-2 gap-x-5 gap-y-2 border-b px-5 py-3.5 text-[11.5px]">
-        <DetailMeta label="Responsável">
-          {issue.assignees.length ? (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <UserAvatar user={issue.assignees[0]} size="xs" />
-              <span className="truncate">
-                {issue.assignees.map((user) => user.name).join(', ')}
-              </span>
-            </span>
+        <form
+          className="flex-none border-t bg-card px-5 pt-3 pb-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void sendComment()
+          }}
+        >
+          {composerOpen ? (
+            <Tabs defaultValue="write">
+              <div className="flex items-center justify-between">
+                <TabsList>
+                  <TabsTrigger value="write">Escrever</TabsTrigger>
+                  <TabsTrigger value="preview">Prévia</TabsTrigger>
+                </TabsList>
+                <span className="font-mono text-[10px] text-muted-foreground">Markdown</span>
+              </div>
+              <TabsContent value="write">
+                <Textarea
+                  autoFocus
+                  aria-label="Novo comentário"
+                  placeholder="Escreva um comentário… **negrito**, `código`, - listas"
+                  className="h-[84px] resize-none text-[12.5px] leading-[1.55]"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+              </TabsContent>
+              <TabsContent value="preview">
+                <div className="min-h-[84px] rounded-lg border bg-background px-3 py-2 text-[12.5px] leading-[1.6]">
+                  <Markdown empty="Nada para pré-visualizar.">{comment}</Markdown>
+                </div>
+              </TabsContent>
+              <div className="mt-2 flex justify-end gap-2">
+                <Button
+                  size="xs"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setComposerOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button size="xs" type="submit" disabled={busy || !comment.trim()}>
+                  Comentar
+                </Button>
+              </div>
+            </Tabs>
           ) : (
-            <span className="text-muted-foreground">Não atribuído</span>
-          )}
-        </DetailMeta>
-        {currentUser && !issue.assignees.some((user) => user.id === currentUser.id) ? (
-          <DetailMeta label="Ação">
             <button
               type="button"
-              disabled={busy}
-              onClick={assignToMe}
-              className="inline-flex items-center gap-1 text-primary hover:underline disabled:opacity-50"
+              onClick={() => setComposerOpen(true)}
+              className="flex h-10 w-full items-center gap-2.5 rounded-xl border border-input bg-background px-3.5 text-left text-[12.5px] text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
             >
-              <UserPlus aria-hidden className="size-3" />
-              Atribuir a mim
+              <MessageSquare aria-hidden className="size-3.5" />
+              <span className="flex-1">Escrever um comentário…</span>
+              <span className="font-mono text-[10px]">Markdown</span>
             </button>
-          </DetailMeta>
-        ) : null}
-        <DetailMeta label="Autor">
-          {issue.author ? (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <UserAvatar user={issue.author} size="xs" />
-              <span className="truncate">{issue.author.name}</span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
           )}
-        </DetailMeta>
-        <DetailMeta label="Atualizado">
-          <span title={absoluteTime(issue.updatedAt)}>{relativeTime(issue.updatedAt) ?? '—'}</span>
-        </DetailMeta>
-        <DetailMeta label="Criado">
-          <span title={absoluteTime(issue.createdAt)}>{relativeTime(issue.createdAt) ?? '—'}</span>
-        </DetailMeta>
-        {mergeRequests.length ? (
-          <DetailMeta label="Merge requests">
-            <span className="flex items-center gap-1.5 text-primary">
-              <GitMerge aria-hidden className="size-3" />
-              {mergeRequests.map((mr) => <a key={mr.id} href={mr.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline">!{mr.iid} {mr.title}</a>)}
-            </span>
-          </DetailMeta>
-        ) : null}
-      </dl>
-
-      <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
-        <CollapsibleSection title="Descrição">
-        {editing ? (
-          <div className="mb-6 space-y-3">
-            <Textarea
-              aria-label="Descrição"
-              className="min-h-36 text-[12.5px] leading-relaxed"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-            <Field label="Responsáveis">
-              <MultiSelect
-                label="Responsáveis"
-                placeholder="Ninguém"
-                searchPlaceholder="Buscar pessoa…"
-                options={users.map((user) => ({
-                  value: String(user.id),
-                  label: `${user.name} · @${user.username}`,
-                  adornment: <UserAvatar user={user} size="xs" />,
-                }))}
-                selected={assigneeIds.map(String)}
-                onChange={(next) => setAssigneeIds(next.map(Number))}
-              />
-            </Field>
-            <Field label="Labels">
-              <MultiSelect
-                label="Labels"
-                placeholder="Sem labels"
-                searchPlaceholder="Buscar label…"
-                options={availableLabels.map((label) => ({
-                  value: label,
-                  label,
-                  adornment: <LabelChip label={label} className="max-w-24" />,
-                }))}
-                selected={visibleLabels(labels)}
-                onChange={(next) =>
-                  setLabels([...labels.filter((label) => label.startsWith('horizon::')), ...next])
-                }
-              />
-            </Field>
-          </div>
-        ) : (
-          <Markdown className="text-[13px] leading-[1.7] text-foreground">
-            {issue.description}
-          </Markdown>
-        )}
-        </CollapsibleSection>
-
-        <Tabs defaultValue="discussion" className="mt-6">
-          <TabsList className="mb-4">
-            <TabsTrigger value="discussion">Discussão ({discussion.length})</TabsTrigger>
-            <TabsTrigger value="activity">Atividade ({activity.length})</TabsTrigger>
-          </TabsList>
-          <TabsContent value="discussion">
-            <CollapsibleSection title="Comentários" count={discussion.length} className="mb-0">
-              <CommentList comments={discussion} empty="Nenhum comentário ainda." />
-            </CollapsibleSection>
-          </TabsContent>
-          <TabsContent value="activity">
-            <CollapsibleSection title="Histórico" count={activity.length} className="mb-0">
-              <CommentList comments={activity} empty="Nenhuma atividade registrada." activity />
-            </CollapsibleSection>
-          </TabsContent>
-        </Tabs>
-        {/* comments are rendered in their respective tabs above */}
-        {false && comments.map((c) => (
-          <article key={c.id} className="mb-5 flex gap-2.5">
-            <UserAvatar user={c.author} size="md" />
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex flex-wrap items-baseline gap-2">
-                <span className="text-[12.5px] font-semibold text-foreground">
-                  {c.author?.name ?? 'GitLab'}
-                </span>
-                <time
-                  className="font-mono text-[10.5px] text-muted-foreground"
-                  dateTime={c.createdAt}
-                  title={absoluteTime(c.createdAt)}
-                >
-                  {relativeTime(c.createdAt) ?? ''}
-                </time>
-              </div>
-              <Markdown className="text-[12.5px] leading-[1.65] text-foreground" empty="">
-                {c.body}
-              </Markdown>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      {error && (
-        <p role="alert" className="border-t bg-destructive/10 px-5 py-2.5 text-xs text-destructive">
-          {error}
-        </p>
-      )}
-
-      <form
-        className="flex-none border-t bg-card px-5 pt-3 pb-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void sendComment()
-        }}
-      >
-        {composerOpen ? (
-          <Tabs defaultValue="write">
-            <div className="flex items-center justify-between">
-              <TabsList>
-                <TabsTrigger value="write">Escrever</TabsTrigger>
-                <TabsTrigger value="preview">Prévia</TabsTrigger>
-              </TabsList>
-              <span className="font-mono text-[10px] text-muted-foreground">Markdown</span>
-            </div>
-            <TabsContent value="write">
-              <Textarea
-                autoFocus
-                aria-label="Novo comentário"
-                placeholder="Escreva um comentário… **negrito**, `código`, - listas"
-                className="h-[84px] resize-none text-[12.5px] leading-[1.55]"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-              />
-            </TabsContent>
-            <TabsContent value="preview">
-              <div className="min-h-[84px] rounded-lg border bg-background px-3 py-2 text-[12.5px] leading-[1.6]">
-                <Markdown empty="Nada para pré-visualizar.">{comment}</Markdown>
-              </div>
-            </TabsContent>
-            <div className="mt-2 flex justify-end gap-2">
-              <Button
-                size="xs"
-                type="button"
-                variant="ghost"
-                onClick={() => setComposerOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button size="xs" type="submit" disabled={busy || !comment.trim()}>
-                Comentar
-              </Button>
-            </div>
-          </Tabs>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setComposerOpen(true)}
-            className="flex h-10 w-full items-center gap-2.5 rounded-xl border border-input bg-background px-3.5 text-left text-[12.5px] text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
-          >
-            <MessageSquare aria-hidden className="size-3.5" />
-            <span className="flex-1">Escrever um comentário…</span>
-            <span className="font-mono text-[10px]">Markdown</span>
-          </button>
-        )}
-      </form>
-    </aside>
+        </form>
+      </aside>
     </>
   )
 }
@@ -660,8 +697,15 @@ function CollapsibleSection({
           {title}
         </h3>
         <span className="h-px flex-1 bg-border" />
-        {count !== undefined ? <span className="font-mono text-[10.5px] text-muted-foreground">{count}</span> : null}
-        <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', !open && '-rotate-90')} />
+        {count !== undefined ? (
+          <span className="font-mono text-[10.5px] text-muted-foreground">{count}</span>
+        ) : null}
+        <ChevronDown
+          className={cn(
+            'size-3.5 text-muted-foreground transition-transform',
+            !open && '-rotate-90',
+          )}
+        />
       </button>
       {open ? children : null}
     </section>
@@ -672,24 +716,42 @@ function CommentList({
   comments,
   empty,
   activity = false,
+  issueHref,
 }: {
   comments: readonly ProviderComment[]
   empty: string
   activity?: boolean
+  issueHref: (iid: number) => string
 }) {
   if (!comments.length) return <p className="py-2 text-[12.5px] text-muted-foreground">{empty}</p>
-  return <>
-    {comments.map((c) => (
-      <article key={c.id} className="mb-5 flex gap-2.5">
-        <UserAvatar user={c.author} size="md" />
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 flex flex-wrap items-baseline gap-2">
-            <span className="text-[12.5px] font-semibold text-foreground">{c.author?.name ?? 'GitLab'}</span>
-            <time className="font-mono text-[10.5px] text-muted-foreground" dateTime={c.createdAt} title={absoluteTime(c.createdAt)}>{relativeTime(c.createdAt) ?? ''}</time>
+  return (
+    <>
+      {comments.map((c) => (
+        <article key={c.id} className="mb-5 flex gap-2.5">
+          <UserAvatar user={c.author} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-baseline gap-2">
+              <span className="text-[12.5px] font-semibold text-foreground">
+                {c.author?.name ?? 'GitLab'}
+              </span>
+              <time
+                className="font-mono text-[10.5px] text-muted-foreground"
+                dateTime={c.createdAt}
+                title={absoluteTime(c.createdAt)}
+              >
+                {relativeTime(c.createdAt) ?? ''}
+              </time>
+            </div>
+            <Markdown
+              className="text-[12.5px] leading-[1.65] text-foreground"
+              empty=""
+              issueHref={issueHref}
+            >
+              {activity ? c.body.replace(/^\w+\s+(added|removed|changed)\s+/i, '') : c.body}
+            </Markdown>
           </div>
-          <Markdown className="text-[12.5px] leading-[1.65] text-foreground" empty="">{activity ? c.body.replace(/^\w+\s+(added|removed|changed)\s+/i, '') : c.body}</Markdown>
-        </div>
-      </article>
-    ))}
-  </>
+        </article>
+      ))}
+    </>
+  )
 }

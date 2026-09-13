@@ -49,7 +49,12 @@ export const isProjectSelected = (project: ProviderProject, selection: ScopeSele
 export const selectedGroups = (
   groups: readonly ProviderGroup[],
   selection: ScopeSelection,
-): readonly ProviderGroup[] => groups.filter((group) => selection.groups.includes(group.fullPath))
+): readonly ProviderGroup[] =>
+  groups.filter((group) =>
+    selection.groups.some(
+      (selected) => group.fullPath === selected || group.fullPath.startsWith(`${selected}/`),
+    ),
+  )
 
 export const selectedProjects = (
   projects: readonly ProviderProject[],

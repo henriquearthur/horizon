@@ -19,16 +19,20 @@ export interface ShellSearch {
   readonly view?: string | undefined
   readonly mode?: ViewMode | undefined
   readonly q?: string | undefined
+  readonly issue?: string | undefined
 }
 
 export const validateShellSearch = (search: Record<string, unknown>): ShellSearch => {
   const view = viewRefToParam(decodeViewRef(search.view))
   const mode = decodeViewMode(search.mode)
   const q = typeof search.q === 'string' ? search.q : ''
+  const issue =
+    typeof search.issue === 'string' && /^\d+:\d+$/.test(search.issue) ? search.issue : ''
   return {
     ...(view === DEFAULT_VIEW_PARAM ? {} : { view }),
     ...(mode === defaultViewMode ? {} : { mode }),
     ...(q === '' ? {} : { q }),
+    ...(issue === '' ? {} : { issue }),
   }
 }
 
@@ -39,6 +43,7 @@ export interface ResolvedShellSearch {
   readonly view: ViewRef
   readonly mode: ViewMode
   readonly query: string
+  readonly issueRef: string | undefined
 }
 
 export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => {
@@ -48,5 +53,20 @@ export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => 
     view: decodeViewRef(viewParam),
     mode: search.mode ?? defaultViewMode,
     query: search.q ?? '',
+    issueRef: search.issue,
   }
+}
+
+/** Opens an Issue inside Horizon without discarding the current reading context. */
+export const horizonIssueHref = (
+  current: Pick<ResolvedShellSearch, 'viewParam' | 'mode' | 'query'>,
+  projectId: number,
+  iid: number,
+): string => {
+  const params = new URLSearchParams()
+  if (current.viewParam !== DEFAULT_VIEW_PARAM) params.set('view', current.viewParam)
+  if (current.mode !== defaultViewMode) params.set('mode', current.mode)
+  if (current.query) params.set('q', current.query)
+  params.set('issue', `${projectId}:${iid}`)
+  return `/?${params.toString()}`
 }

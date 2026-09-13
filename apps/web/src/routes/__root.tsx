@@ -1,4 +1,4 @@
-import { builtinViews, savedViewRef, viewRefToParam } from '@horizon/domain'
+import { builtinViews, isIssueVisible, savedViewRef, viewRefToParam } from '@horizon/domain'
 import {
   createRootRoute,
   HeadContent,
@@ -7,9 +7,10 @@ import {
   useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
+import { ScopeDialog } from '~/components/setup/scope-dialog'
 import { EmptyState } from '~/components/shell/empty-state'
 import { useSavedViews } from '~/db/use-saved-views'
 import { ThemeProvider, themeBootstrapScript } from '~/lib/theme'
@@ -78,6 +79,7 @@ function AppShell({ children }: { children: ReactNode }) {
   const { viewParam, query } = resolveShellSearch(Route.useSearch())
   const navigate = useNavigate({ from: Route.fullPath })
   const runtime = useHorizonRuntime()
+  const [scopeOpen, setScopeOpen] = useState(false)
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
   const scopeTree = buildScopeTree(
@@ -89,7 +91,6 @@ function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       <AppHeader
-        connectionLabel={runtime.snapshot ? new URL(runtime.snapshot.connection.url).host : null}
         userName={runtime.snapshot?.connection.user.name ?? null}
         userAvatarUrl={runtime.snapshot?.connection.user.avatarUrl}
         query={query}
@@ -111,18 +112,7 @@ function AppShell({ children }: { children: ReactNode }) {
             ...(runtime.snapshot
               ? {
                   count: String(
-                    item.viewParam === 'by-project'
-                      ? runtime.snapshot.projects.length
-                      : runtime.snapshot.issues.filter((issue) =>
-                          item.viewParam === 'inbox'
-                            ? issue.state === 'opened'
-                            : item.viewParam === 'assigned-to-me'
-                              ? issue.assignees.some(
-                                  (user) =>
-                                    user.username === runtime.snapshot?.connection.user.username,
-                                )
-                              : true,
-                        ).length,
+                    runtime.snapshot.issues.filter((issue) => isIssueVisible(issue)).length,
                   ),
                 }
               : {}),
@@ -134,16 +124,18 @@ function AppShell({ children }: { children: ReactNode }) {
           }))}
           groups={scopeTree.groups}
           standaloneProjects={scopeTree.standaloneProjects}
+          onConfigureScope={() => setScopeOpen(true)}
         />
         {children}
       </div>
+      <ScopeDialog open={scopeOpen} onOpenChange={setScopeOpen} />
     </div>
   )
 }
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="pt-BR" data-theme="dark" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme="dark" data-accent="indigo" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />

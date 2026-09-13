@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_VIEW_PARAM, resolveShellSearch, validateShellSearch } from '~/lib/search'
+import {
+  DEFAULT_VIEW_PARAM,
+  horizonIssueHref,
+  resolveShellSearch,
+  validateShellSearch,
+} from '~/lib/search'
 
 describe('validateShellSearch', () => {
   it('keeps the URL clean when everything is at its default', () => {
@@ -8,10 +13,18 @@ describe('validateShellSearch', () => {
   })
 
   it('keeps non-default values', () => {
-    expect(validateShellSearch({ view: 'all', mode: 'kanban', q: 'terraform' })).toEqual({
-      view: 'all',
+    expect(
+      validateShellSearch({
+        view: 'project:infra/app',
+        mode: 'kanban',
+        q: 'terraform',
+        issue: '7:19',
+      }),
+    ).toEqual({
+      view: 'project:infra/app',
       mode: 'kanban',
       q: 'terraform',
+      issue: '7:19',
     })
   })
 
@@ -24,9 +37,10 @@ describe('resolveShellSearch', () => {
   it('fills in the defaults and decodes the View once', () => {
     expect(resolveShellSearch({})).toEqual({
       viewParam: DEFAULT_VIEW_PARAM,
-      view: { _tag: 'Builtin', id: 'inbox' },
+      view: { _tag: 'Builtin', id: 'general' },
       mode: 'list',
       query: '',
+      issueRef: undefined,
     })
   })
 
@@ -36,6 +50,15 @@ describe('resolveShellSearch', () => {
       view: { _tag: 'Project', path: 'infra/ci' },
       mode: 'kanban',
       query: 'ci',
+      issueRef: undefined,
     })
+  })
+})
+
+describe('horizonIssueHref', () => {
+  it('preserves the active reading context', () => {
+    expect(
+      horizonIssueHref({ viewParam: 'group:infra', mode: 'kanban', query: 'timeout' }, 7, 193),
+    ).toBe('/?view=group%3Ainfra&mode=kanban&q=timeout&issue=7%3A193')
   })
 })

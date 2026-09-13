@@ -29,9 +29,8 @@ derives data from them, but never becomes their source of truth.
 ## View
 
 A named way of looking at the Issues of an Escopo: filters, ordering and
-grouping. Horizon ships the builtin Views `Inbox`, `Todos os issues`,
-`Por projeto` and `Atribuídos a mim`; a saved View is one the user named and
-kept. Views are Horizon-owned data and are tied to an Escopo.
+grouping. Horizon ships only the builtin View `Geral`; a saved View is one the
+user named and kept. Views are Horizon-owned data and are tied to an Escopo.
 
 ## Label Horizon
 

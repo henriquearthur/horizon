@@ -69,8 +69,8 @@ export class SetupService {
     }
   }
 
-  catalog(): Promise<SetupCatalog> {
-    return this.catalogOf()
+  catalog(force = false): Promise<SetupCatalog> {
+    return this.catalogOf(force)
   }
 
   async saveScope(scope: ScopeSelection): Promise<ScopeSelection> {

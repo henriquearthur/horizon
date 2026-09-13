@@ -10,8 +10,8 @@ import {
 } from '../src/index.ts'
 
 describe('builtinViews', () => {
-  it('lists the four builtin views in prototype order', () => {
-    expect(builtinViews.map((v) => v.id)).toEqual(['inbox', 'all', 'by-project', 'assigned-to-me'])
+  it('ships only the general builtin view', () => {
+    expect(builtinViews.map((v) => v.id)).toEqual(['general'])
   })
 
   it('gives every builtin view a title and a subtitle', () => {
@@ -40,7 +40,7 @@ describe('decodeViewMode', () => {
 
 describe('decodeViewRef', () => {
   it('decodes a builtin view reference', () => {
-    expect(decodeViewRef('all')).toEqual({ _tag: 'Builtin', id: 'all' })
+    expect(decodeViewRef('general')).toEqual({ _tag: 'Builtin', id: 'general' })
   })
 
   it('decodes a project view reference', () => {
@@ -54,17 +54,17 @@ describe('decodeViewRef', () => {
     expect(decodeViewRef('saved:abc123')).toEqual({ _tag: 'Saved', id: 'abc123' })
   })
 
-  it('falls back to the inbox for unknown references', () => {
-    expect(decodeViewRef('nope')).toEqual({ _tag: 'Builtin', id: 'inbox' })
-    expect(decodeViewRef(undefined)).toEqual({ _tag: 'Builtin', id: 'inbox' })
-    expect(decodeViewRef('project:')).toEqual({ _tag: 'Builtin', id: 'inbox' })
+  it('falls back to Geral for unknown references', () => {
+    expect(decodeViewRef('nope')).toEqual({ _tag: 'Builtin', id: 'general' })
+    expect(decodeViewRef(undefined)).toEqual({ _tag: 'Builtin', id: 'general' })
+    expect(decodeViewRef('project:')).toEqual({ _tag: 'Builtin', id: 'general' })
   })
 })
 
 describe('viewRefToParam', () => {
   it('round-trips every reference kind', () => {
     const refs = [
-      { _tag: 'Builtin', id: 'by-project' },
+      { _tag: 'Builtin', id: 'general' },
       { _tag: 'Project', path: 'platform/api-gateway' },
       { _tag: 'Saved', id: 'v1' },
     ] as const

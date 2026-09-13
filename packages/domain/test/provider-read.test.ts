@@ -61,6 +61,19 @@ describe('GitLabReadProvider', () => {
     await expect(provider.listProjects()).rejects.toThrow('sem permissão')
   })
 
+  it('includes projects reached through inherited group access', async () => {
+    const fetcher = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(JSON.stringify([]), { headers: { 'x-next-page': '' } })),
+    )
+    await new GitLabReadProvider(
+      { url: 'https://gitlab.example', token: 'x' },
+      fetcher,
+    ).listProjects()
+    const url = new URL(fetcher.mock.calls[0]![0].toString())
+    expect(url.searchParams.get('min_access_level')).toBe('10')
+    expect(url.searchParams.get('membership')).toBeNull()
+  })
+
   it('retries transient reads and eventually succeeds', async () => {
     const fetcher = vi
       .fn<typeof fetch>()

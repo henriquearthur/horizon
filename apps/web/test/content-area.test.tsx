@@ -9,9 +9,9 @@ import { renderWithRouter } from './router-harness'
 
 describe('activeViewHeading', () => {
   it('describes a builtin View', () => {
-    expect(activeViewHeading(decodeViewRef('all'))).toEqual({
-      title: 'Todos os issues',
-      subtitle: 'todos os grupos e subgrupos',
+    expect(activeViewHeading(decodeViewRef('general'))).toEqual({
+      title: 'Geral',
+      subtitle: 'issues de todo o Escopo',
     })
   })
 
@@ -26,29 +26,26 @@ describe('activeViewHeading', () => {
     expect(activeViewHeading(decodeViewRef('saved:v1')).subtitle).toBe('filtros salvos por você')
   })
 
-  it('falls back to the Inbox for an unknown View', () => {
-    expect(activeViewHeading(decodeViewRef('nope')).title).toBe('Inbox')
+  it('falls back to Geral for an unknown View', () => {
+    expect(activeViewHeading(decodeViewRef('nope')).title).toBe('Geral')
   })
 })
 
 describe('ContentHeader', () => {
   it('shows the View title and subtitle', async () => {
     await renderWithRouter(
-      <ContentHeader title="Inbox" subtitle="precisa da sua atenção" mode="list" />,
+      <ContentHeader title="Geral" subtitle="issues de todo o Escopo" mode="list" />,
     )
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Inbox')
-    expect(screen.getByText('precisa da sua atenção')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Geral')
+    expect(screen.getByText('issues de todo o Escopo')).toBeInTheDocument()
   })
 
   it('marks the current mode and links to the other one', async () => {
-    await renderWithRouter(<ContentHeader title="Inbox" subtitle="" mode="list" />, {
-      url: '/?view=all',
+    await renderWithRouter(<ContentHeader title="Geral" subtitle="" mode="list" />, {
+      url: '/',
     })
     expect(screen.getByRole('link', { name: 'Lista' })).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('link', { name: 'Kanban' })).toHaveAttribute(
-      'href',
-      '/?view=all&mode=kanban',
-    )
+    expect(screen.getByRole('link', { name: 'Kanban' })).toHaveAttribute('href', '/?mode=kanban')
   })
 })
 

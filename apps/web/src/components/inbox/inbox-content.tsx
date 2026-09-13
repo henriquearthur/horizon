@@ -8,6 +8,7 @@ import {
   readIssueProperties,
   searchIssues,
   sortIssues,
+  viewRefToParam,
   type InboxFilters,
   type InboxGroup,
   type InboxSort,
@@ -47,6 +48,7 @@ import {
 } from '~/components/ui/select'
 import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved-views'
 import { projectPath } from '~/lib/issue-presentation'
+import { horizonIssueHref } from '~/lib/search'
 import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
@@ -70,15 +72,18 @@ export function InboxContent({
   view,
   mode,
   query,
+  issueRef,
   provider,
   refresh,
   refreshing,
   onSavedViewSelected,
+  onIssueSelected,
 }: {
   readonly snapshot: RuntimeSnapshot
   readonly view: ViewRef
   readonly mode: ViewMode
   readonly query: string
+  readonly issueRef?: string | undefined
   readonly provider: ProviderWriteContract
   readonly refresh: () => Promise<void>
   readonly refreshing: boolean
@@ -87,6 +92,7 @@ export function InboxContent({
     mode?: ViewMode
     query?: string
   }) => void
+  readonly onIssueSelected?: (issueRef: string | undefined) => void
 }) {
   const [filters, setFilters] = useState<InboxFilters>({})
   const [sort, setSort] = useState<InboxSort>('updated')
@@ -114,7 +120,6 @@ export function InboxContent({
     view._tag === 'Saved' ? savedViews.find((savedView) => savedView.id === view.id) : undefined
 
   useEffect(() => {
-    if (view._tag === 'Builtin' && view.id === 'by-project') setGroup('project')
     if (activeSavedView) {
       setFilters({
         ...(activeSavedView.projectIds ? { projectIds: activeSavedView.projectIds } : {}),
@@ -172,12 +177,6 @@ export function InboxContent({
         const path = projectById.get(issue.projectId)?.groupPath
         return path === view.path || path?.startsWith(`${view.path}/`) === true
       })
-    if (view._tag === 'Builtin' && view.id === 'assigned-to-me')
-      issues = issues.filter((issue) =>
-        issue.assignees.some((assignee) => assignee.username === snapshot.connection.user.username),
-      )
-    if (view._tag === 'Builtin' && view.id === 'inbox')
-      issues = issues.filter((issue) => issue.state === 'opened')
     return issues
   }, [projectById, snapshot, view])
   const issues = useMemo(() => {
@@ -198,6 +197,16 @@ export function InboxContent({
     return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
   const grouped = useMemo(() => groupIssues(issues, group), [group, issues])
+  const issueHref = (iid: number) =>
+    horizonIssueHref(
+      {
+        viewParam: viewRefToParam(view),
+        mode,
+        query,
+      },
+      selected?.projectId ?? 0,
+      iid,
+    )
 
   /** Counts come from the Issues the View offers, so a filter never reads `0` by surprise. */
   const countBy = (match: (issue: ProviderIssue) => boolean) => available.filter(match).length
@@ -299,6 +308,7 @@ export function InboxContent({
 
   const openIssue = async (issue: ProviderIssue) => {
     setSelected(issue)
+    onIssueSelected?.(`${issue.projectId}:${issue.iid}`)
     setComments([])
     setDetailError(undefined)
     const requestId = ++detailRequest.current
@@ -317,7 +327,22 @@ export function InboxContent({
   useEffect(() => {
     setSelected(undefined)
     setComments([])
-  }, [view, mode, query])
+  }, [
+    view._tag,
+    view._tag === 'Group' || view._tag === 'Project' ? view.path : view.id,
+    mode,
+    query,
+  ])
+
+  useEffect(() => {
+    if (!issueRef) return
+    const [projectId, iid] = issueRef.split(':').map(Number)
+    if (selected?.projectId === projectId && selected?.iid === iid) return
+    const target = snapshot.issues.find(
+      (issue) => issue.projectId === projectId && issue.iid === iid,
+    )
+    if (target) void openIssue(target)
+  }, [issueRef, selected?.id, snapshot.issues])
 
   const changeStatus = async (issue: ProviderIssue, status: IssueStatus) => {
     setDetailError(undefined)
@@ -409,7 +434,7 @@ export function InboxContent({
                   persistSavedViews(
                     readSavedViews().filter((savedView) => savedView.id !== activeSavedView.id),
                   )
-                  onSavedViewSelected?.({ view: 'inbox' })
+                  onSavedViewSelected?.({ view: 'general' })
                 }}
               />
             ) : null}
@@ -558,13 +583,17 @@ export function InboxContent({
             issue={selected}
             comments={comments}
             provider={provider}
-            onClose={() => setSelected(undefined)}
+            onClose={() => {
+              setSelected(undefined)
+              onIssueSelected?.(undefined)
+            }}
             onUpdated={setSelected}
             onCommentCreated={(comment) => setComments((current) => [...current, comment])}
             users={snapshot.users}
             currentUser={snapshot.connection.user}
             loading={detailLoading}
             availableLabels={labels}
+            issueHref={issueHref}
           />
         ) : null}
         {detailError ? (

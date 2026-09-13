@@ -24,8 +24,7 @@ const components: Components = {
   a: ({ children, href }) => (
     <a
       href={href}
-      target="_blank"
-      rel="noreferrer"
+      {...(href?.startsWith('/?issue=') ? {} : { target: '_blank', rel: 'noreferrer' })}
       className="font-medium text-primary underline-offset-2 hover:underline"
     >
       {children}
@@ -107,19 +106,64 @@ export function Markdown({
   children,
   className,
   empty = 'Sem descrição.',
+  issueHref,
 }: {
   readonly children: string | null | undefined
   readonly className?: string
   /** Shown instead of the document when there is nothing to render. */
   readonly empty?: string
+  /** Turns plain `#123` references into links to issues in Horizon. */
+  readonly issueHref?: (iid: number) => string
 }) {
   const source = (children ?? '').trim()
   if (!source) return <p className={cn('text-muted-foreground', className)}>{empty}</p>
   return (
     <div className={cn('[text-wrap:pretty]', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, ...(issueHref ? [remarkIssueReferences(issueHref)] : [])]}
+        components={components}
+      >
         {source}
       </ReactMarkdown>
     </div>
   )
+}
+
+const remarkIssueReferences = (hrefFor: (iid: number) => string) => () => (tree: any) => {
+  const visit = (node: any) => {
+    if (
+      !Array.isArray(node.children) ||
+      node.type === 'link' ||
+      node.type === 'code' ||
+      node.type === 'inlineCode'
+    )
+      return
+    node.children = node.children.flatMap((child: any) => {
+      if (child.type !== 'text') {
+        visit(child)
+        return [child]
+      }
+      const parts: any[] = []
+      const pattern = /(^|[\s(])#(\d+)\b/g
+      let cursor = 0
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(child.value)) !== null) {
+        const prefixEnd = match.index + (match[1] ?? '').length
+        if (prefixEnd > cursor)
+          parts.push({ type: 'text', value: child.value.slice(cursor, prefixEnd) })
+        const label = `#${match[2]}`
+        parts.push({
+          type: 'link',
+          url: hrefFor(Number(match[2])),
+          children: [{ type: 'text', value: label }],
+        })
+        cursor = pattern.lastIndex
+      }
+      if (!parts.length) return [child]
+      if (cursor < child.value.length)
+        parts.push({ type: 'text', value: child.value.slice(cursor) })
+      return parts
+    })
+  }
+  visit(tree)
 }

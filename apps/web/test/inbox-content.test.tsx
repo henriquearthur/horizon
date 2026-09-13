@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InboxContent } from '~/components/inbox/inbox-content'
@@ -29,6 +30,7 @@ const snapshot: RuntimeSnapshot = {
       projectId: 1,
       title: 'Done issue',
       state: 'closed',
+      closedAt: new Date().toISOString(),
       webUrl: '#2',
       assignees: [],
       labels: ['horizon::status::Concluído'],
@@ -45,7 +47,7 @@ describe('InboxContent', () => {
     render(
       <InboxContent
         snapshot={snapshot}
-        view={{ _tag: 'Builtin', id: 'all' }}
+        view={{ _tag: 'Builtin', id: 'general' }}
         mode="list"
         query=""
         provider={{} as never}
@@ -63,7 +65,7 @@ describe('InboxContent', () => {
     render(
       <InboxContent
         snapshot={snapshot}
-        view={{ _tag: 'Builtin', id: 'all' }}
+        view={{ _tag: 'Builtin', id: 'general' }}
         mode="list"
         query=""
         provider={{} as never}
@@ -99,7 +101,7 @@ describe('InboxContent', () => {
     render(
       <InboxContent
         snapshot={conflicted}
-        view={{ _tag: 'Builtin', id: 'all' }}
+        view={{ _tag: 'Builtin', id: 'general' }}
         mode="list"
         query=""
         provider={provider}
@@ -149,5 +151,41 @@ describe('InboxContent', () => {
       mode: 'kanban',
       query: 'Done',
     })
+  })
+
+  it('keeps the Detail open when assigning the issue to the current user', async () => {
+    function Harness() {
+      const [current, setCurrent] = useState(snapshot)
+      const provider = {
+        listComments: vi.fn().mockResolvedValue([]),
+        updateIssue: vi.fn().mockImplementation(async (_projectId, _iid, changes) => {
+          const updated = {
+            ...current.issues[0]!,
+            assignees: [current.connection.user],
+            ...changes,
+          }
+          setCurrent({ ...current, issues: [updated, ...current.issues.slice(1)] })
+          return updated
+        }),
+      } as never
+      return (
+        <InboxContent
+          snapshot={current}
+          view={{ _tag: 'Builtin', id: 'general' }}
+          mode="list"
+          query=""
+          provider={provider}
+          refresh={vi.fn()}
+          refreshing={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await userEvent.click(screen.getByText('Backlog issue'))
+    expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Atribuir a mim' }))
+    expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
   })
 })

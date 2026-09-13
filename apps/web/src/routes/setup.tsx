@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { ScopePicker, type ScopeDraft } from '~/components/setup/scope-picker'
 import { Button } from '~/components/ui/button'
 import { getSetupCatalog, getSetupStatus, saveSetupScope } from '~/server/setup-functions'
@@ -12,28 +12,28 @@ import { useHorizonRuntime } from '~/runtime/runtime-provider'
  * reach GitLab, it explains exactly what to fix instead of asking for a token.
  */
 export const Route = createFileRoute('/setup')({
-  loader: async (): Promise<{ status: SetupStatus; catalog?: SetupCatalog }> => {
+  loader: async (): Promise<{
+    status: SetupStatus
+    catalog?: SetupCatalog
+    catalogError?: string
+  }> => {
     const status = await getSetupStatus()
-    return { status }
+    if (!status.reachable) return { status }
+    try {
+      return { status, catalog: await getSetupCatalog({ data: { force: false } }) }
+    } catch (cause) {
+      return {
+        status,
+        catalogError:
+          cause instanceof Error ? cause.message : 'Não foi possível carregar grupos e projetos.',
+      }
+    }
   },
   component: SetupPage,
 })
 
 function SetupPage() {
-  const { status } = Route.useLoaderData()
-  const [catalog, setCatalog] = useState<SetupCatalog>()
-  const [catalogError, setCatalogError] = useState<string>()
-  const [catalogAttempt, setCatalogAttempt] = useState(0)
-  useEffect(() => {
-    if (!status.reachable) return
-    void getSetupCatalog()
-      .then(setCatalog)
-      .catch((error) =>
-        setCatalogError(
-          error instanceof Error ? error.message : 'Não foi possível carregar grupos e projetos.',
-        ),
-      )
-  }, [status.reachable, catalogAttempt])
+  const { status, catalog, catalogError } = Route.useLoaderData()
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -42,30 +42,16 @@ function SetupPage() {
           Horizon · configuração
         </p>
         {!status.reachable ? (
-          <Diagnostics
-            status={status}
-            onRetry={() => {
-              setCatalogError(undefined)
-              setCatalogAttempt((attempt) => attempt + 1)
-            }}
-          />
+          <Diagnostics status={status} onRetry={() => {}} />
         ) : catalog ? (
           <ScopeForm catalog={catalog} host={status.host} />
-        ) : catalogError ? (
+        ) : (
           <Diagnostics
-            status={{ ...status, error: catalogError }}
-            onRetry={() => {
-              setCatalogError(undefined)
-              setCatalogAttempt((attempt) => attempt + 1)
+            status={{
+              ...status,
+              error: catalogError ?? 'Não foi possível carregar grupos e projetos.',
             }}
           />
-        ) : (
-          <div role="status" className="space-y-3">
-            <h1 className="text-2xl font-semibold">Carregando seu Escopo…</h1>
-            <p className="text-sm text-muted-foreground">
-              A conexão foi validada. Estamos buscando grupos e projetos em segundo plano.
-            </p>
-          </div>
         )}
       </div>
     </main>
@@ -126,17 +112,32 @@ function ScopeForm({ catalog, host }: { catalog: SetupCatalog; host: string | un
     setError(undefined)
     try {
       await saveSetupScope({ data: { ...scope, followGroups: scope.groups } })
-      await runtime.refresh({ force: true })
-      await navigate({ to: '/', search: { view: 'inbox', mode: 'list' } })
+      await runtime.refresh({ force: true, throwOnError: true })
+      await navigate({ to: '/', search: { view: 'general', mode: 'list' } })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o Escopo.')
-    } finally { setBusy(false) }
+    } finally {
+      setBusy(false)
+    }
   }
-  return <form onSubmit={(event) => void save(event)} className="space-y-5">
-    <h1 className="text-2xl font-semibold">Configure seu Escopo</h1>
-    <p className="text-sm text-muted-foreground">{host}</p>
-    <ScopePicker groups={catalog.groups} projects={catalog.projects} value={scope} onChange={setScope} />
-    {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    <Button type="submit" disabled={busy || (!scope.groups.length && !scope.projects.length)}>{busy ? 'Salvando…' : 'Salvar e abrir Inbox'}</Button>
-  </form>
+  return (
+    <form onSubmit={(event) => void save(event)} className="space-y-5">
+      <h1 className="text-2xl font-semibold">Configure seu Escopo</h1>
+      <p className="text-sm text-muted-foreground">{host}</p>
+      <ScopePicker
+        groups={catalog.groups}
+        projects={catalog.projects}
+        value={scope}
+        onChange={setScope}
+      />
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <Button type="submit" disabled={busy || (!scope.groups.length && !scope.projects.length)}>
+        {busy ? 'Salvando…' : 'Salvar e abrir Inbox'}
+      </Button>
+    </form>
+  )
 }
