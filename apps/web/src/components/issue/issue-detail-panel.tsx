@@ -62,6 +62,7 @@ import { Textarea } from '~/components/ui/textarea'
 import {
   absoluteTime,
   byAge,
+  isTypeLabel,
   relativeTime,
   visibleLabels,
   issueTypes,
@@ -69,6 +70,13 @@ import {
 } from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
+
+/**
+ * Labels Horizon writes itself — Status, Prioridade, Projeto, Bloqueio — plus
+ * the `type:*` labels that carry Tipo. None of them is edited as a Label, and
+ * all of them must survive a save from the Label picker.
+ */
+const isOwnedLabel = (label: string): boolean => isHorizonLabel(label) || isTypeLabel(label)
 
 export function IssueDetailPanel({
   issue,
@@ -139,8 +147,8 @@ export function IssueDetailPanel({
   const labelOptions = useMemo(
     () =>
       metadata.labels.length
-        ? metadata.labels.filter((label) => !isHorizonLabel(label))
-        : availableLabels,
+        ? metadata.labels.filter((label) => !isOwnedLabel(label))
+        : availableLabels.filter((label) => !isOwnedLabel(label)),
     [metadata.labels, availableLabels],
   )
   const discussion = comments.filter((item) => !item.system)
@@ -536,7 +544,7 @@ export function IssueDetailPanel({
                       adornment: <LabelChip label={label} className="max-w-24" />,
                     }))}
                     selected={visibleLabels(labels)}
-                    onChange={(next) => setLabels([...labels.filter(isHorizonLabel), ...next])}
+                    onChange={(next) => setLabels([...labels.filter(isOwnedLabel), ...next])}
                   />
                 </Field>
               </div>
@@ -697,8 +705,8 @@ export function IssueCreateForm({
   const metadata = useProjectMetadata(projectId)
   const people = metadata.users.length ? metadata.users : users
   const labelOptions = metadata.labels.length
-    ? metadata.labels.filter((label) => !isHorizonLabel(label))
-    : availableLabels
+    ? metadata.labels.filter((label) => !isOwnedLabel(label))
+    : availableLabels.filter((label) => !isOwnedLabel(label))
   return (
     <form
       className="space-y-3"

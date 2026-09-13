@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   filterIssues,
+  searchIssues,
   groupIssues,
   sortIssues,
   visibleIssueHierarchy,
@@ -83,5 +84,16 @@ describe('Inbox grouping', () => {
     expect(filterIssues([older, newer], { groupPaths: ['infra'] }, projects)).toEqual([older])
     expect(sortIssues([older, newer], 'created')).toEqual([newer, older])
     expect(sortIssues([older, newer], 'updated')).toEqual([newer, older])
+  })
+})
+
+describe('searchIssues', () => {
+  it('reads the labels a human wrote, not the ones Horizon writes', () => {
+    const blocked = issue(1, ['horizon-blocks:1:2:1:1', 'horizon::status::Em andamento'])
+    const tagged = issue(2, ['blocks-refactor'])
+
+    expect(searchIssues([blocked, tagged], 'blocks')).toEqual([tagged])
+    expect(searchIssues([blocked, tagged], 'status')).toEqual([])
+    expect(searchIssues([blocked, tagged], 'Issue 1')).toEqual([blocked])
   })
 })
