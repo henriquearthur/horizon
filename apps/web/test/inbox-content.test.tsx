@@ -202,10 +202,43 @@ describe('InboxContent', () => {
     )
 
     expect(screen.queryByText('Sub issue')).not.toBeInTheDocument()
+    expect(screen.getByText('0 de 1 concluídos')).toBeInTheDocument()
     await userEvent.click(
       screen.getByRole('button', { name: /Expandir sub-issues de Backlog issue/ }),
     )
     expect(screen.getByText('Sub issue')).toBeInTheDocument()
+    expect(screen.getByText('filho de #1')).toBeInTheDocument()
+  })
+
+  it('keeps an old parent and old siblings when one direct child remains open', async () => {
+    const old = '2025-01-01T00:00:00Z'
+    const parent = { ...snapshot.issues[0]!, state: 'closed' as const, closedAt: old }
+    const openChild = { ...snapshot.issues[0]!, id: 3, iid: 3, title: 'Open child', parentIid: 1 }
+    const oldChild = {
+      ...snapshot.issues[0]!,
+      id: 4,
+      iid: 4,
+      title: 'Old child',
+      parentIid: 1,
+      state: 'closed' as const,
+      closedAt: old,
+    }
+    render(
+      <InboxContent
+        snapshot={{ ...snapshot, issues: [parent, openChild, oldChild] }}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    expect(screen.getByText('1 de 2 concluídos')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Expandir sub-issues/ }))
+    expect(screen.getByText('Open child')).toBeInTheDocument()
+    expect(screen.getByText('Old child')).toBeInTheDocument()
   })
 
   it('keeps the Detail open when assigning the issue to the current user', async () => {

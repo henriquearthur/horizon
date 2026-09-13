@@ -82,6 +82,9 @@ function IssueMeta({
     >
       {path ? <span className="truncate">{path}</span> : null}
       {code ? <span className="flex-none font-medium text-muted-foreground/90">{code}</span> : null}
+      {issue.parentIid !== undefined ? (
+        <span className="flex-none">filho de #{issue.parentIid}</span>
+      ) : null}
       {created ? (
         <>
           <span aria-hidden className="flex-none opacity-50">
@@ -104,11 +107,19 @@ function IssueMeta({
       />
       {childCount ? (
         <span
-          title={`${childCount} sub-issue(s)`}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-px text-[10px] tabular-nums text-muted-foreground"
+          title={`${doneChildren} de ${childCount} concluídos`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-1.5 py-px text-[10px] tabular-nums text-muted-foreground"
         >
           <ListTree aria-hidden className="size-3" />
-          {doneChildren}/{childCount}
+          <span>
+            {doneChildren} de {childCount} concluídos
+          </span>
+          <span className="h-1 w-10 overflow-hidden rounded-full bg-foreground/15" aria-hidden>
+            <span
+              className="block h-full rounded-full bg-primary"
+              style={{ width: `${(doneChildren / childCount) * 100}%` }}
+            />
+          </span>
         </span>
       ) : null}
     </div>
