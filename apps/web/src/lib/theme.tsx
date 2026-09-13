@@ -7,9 +7,9 @@ export type AccentColor =
 export const THEME_STORAGE_KEY = 'horizon-theme'
 export const ACCENT_STORAGE_KEY = 'horizon-accent'
 
-/** The prototype opens in dark mode. */
-export const DEFAULT_THEME: Theme = 'dark'
-export const DEFAULT_ACCENT: AccentColor = 'indigo'
+/** Horizon opens in light mode with the blue accent. */
+export const DEFAULT_THEME: Theme = 'light'
+export const DEFAULT_ACCENT: AccentColor = 'blue'
 
 type ThemeReader = { getItem: (key: string) => string | null } | undefined
 

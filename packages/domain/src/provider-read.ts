@@ -1,3 +1,4 @@
+import { GitLabHttp, GitLabHttpError, nextPageOf, type GitLabHttpOptions } from './http.ts'
 import type { ScopeSelection } from './scope.ts'
 import type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
 export type { ProviderGroup, ProviderProject, ProviderUser } from './provider.ts'
@@ -27,10 +28,24 @@ export interface ProviderIssue {
   readonly mergeRequestCount?: number
   /** Comments on the Issue, as counted by the Provider. */
   readonly commentCount?: number
+  /** `task` is a child work item; `issue` is everything else. */
+  readonly kind?: 'issue' | 'task'
+  /** `iid` of the work item this one hangs under, when it has a parent. */
+  readonly parentIid?: number
+  /** The Provider says this Issue has child items. */
+  readonly hasChildren?: boolean
+}
+
+/** Parent/child links of one project, keyed by `iid`. */
+export interface ProviderHierarchy {
+  readonly parentOf: ReadonlyMap<number, number>
+  readonly withChildren: ReadonlySet<number>
 }
 export interface ProviderReadPage<T> {
   readonly items: readonly T[]
   readonly nextPage?: number
+  /** How many pages the Provider says the collection has, when it says so. */
+  readonly totalPages?: number
 }
 export interface ProviderDiscussionMatch {
   readonly projectId: number
@@ -46,6 +61,10 @@ export interface ProviderReadContract {
     query: string,
     projectIds: readonly number[],
   ): Promise<readonly ProviderDiscussionMatch[]>
+  /** Parent/child links of the given projects, read in as few calls as possible. */
+  readHierarchy?(
+    projects: readonly { readonly id: number; readonly fullPath: string }[],
+  ): Promise<ReadonlyMap<number, ProviderHierarchy>>
   readScope(scope: ScopeSelection): Promise<{
     groups: readonly ProviderGroup[]
     projects: readonly ProviderProject[]
@@ -62,56 +81,55 @@ const user = (v: any): ProviderUser | undefined =>
         ...(typeof v.avatar_url === 'string' ? { avatarUrl: v.avatar_url } : {}),
       }
     : undefined
-const page = <T>(items: readonly T[], header: string | null): ProviderReadPage<T> => ({
+/** At most this many pages are requested up front. */
+const MAX_PARALLEL_PAGES = 200
+
+const totalPagesOf = (header: string | null | undefined): number | undefined => {
+  const value = Number(header)
+  return Number.isSafeInteger(value) && value > 0 && value <= MAX_PARALLEL_PAGES ? value : undefined
+}
+
+const page = <T>(
+  items: readonly T[],
+  header: string | null,
+  total?: string | null,
+): ProviderReadPage<T> => ({
   items,
   ...(header && Number(header) > 0 ? { nextPage: Number(header) } : {}),
+  // A header that is not a sane page count is ignored: the caller then walks
+  // `nextPage` instead of allocating whatever the Provider claimed.
+  ...(totalPagesOf(total) === undefined ? {} : { totalPages: totalPagesOf(total)! }),
 })
 
 export class GitLabReadProvider implements ProviderReadContract {
+  readonly #http: GitLabHttp
+
   constructor(
-    private readonly connection: { url: string; token: string },
-    private readonly fetcher: typeof fetch = fetch,
-    private readonly options: { maxRetries?: number; retryDelayMs?: number } = {},
-  ) {}
-  private async request(path: string, pageNo = 1): Promise<{ value: any; next: string | null }> {
-    const base = new URL(this.connection.url)
-    const prefix = base.pathname.replace(/\/$/, '')
-    const url = new URL(`${prefix}/api/v4/${path}`, base)
-    url.searchParams.set('page', String(pageNo))
-    url.searchParams.set('per_page', '100')
-    const retries = Math.max(0, this.options.maxRetries ?? 2)
-    let response: Response | undefined
-    for (let attempt = 0; ; attempt++) {
-      try {
-        response = await this.fetcher(url, {
-          headers: { 'PRIVATE-TOKEN': this.connection.token, Accept: 'application/json' },
-        })
-      } catch (error) {
-        if (attempt >= retries) throw new Error('Não foi possível conectar ao GitLab.')
-        await this.pause(attempt)
-        continue
+    connection: { url: string; token: string },
+    fetcher: typeof fetch = fetch,
+    options: GitLabHttpOptions = {},
+  ) {
+    this.#http = new GitLabHttp(connection, fetcher, options)
+  }
+
+  /** One REST page, translated into the `{ value, next }` shape used below. */
+  private async request(
+    path: string,
+    pageNo = 1,
+  ): Promise<{ value: any; next: string | null; total: string | null }> {
+    try {
+      const result = await this.#http.json<any>(this.#http.url(path, pageNo))
+      const next = nextPageOf(result.response)
+      return {
+        value: result.value,
+        next: next === undefined ? null : String(next),
+        total: result.response.headers.get('x-total-pages'),
       }
-      if (response.ok || !this.transient(response.status) || attempt >= retries) break
-      await this.pause(attempt)
+    } catch (error) {
+      throw error instanceof GitLabHttpError ? new Error(error.message) : error
     }
-    if (!response) throw new Error('Não foi possível conectar ao GitLab.')
-    if (!response.ok)
-      throw new Error(
-        response.status === 403
-          ? 'Token sem permissão para acessar o GitLab.'
-          : `GitLab respondeu ${response.status}.`,
-      )
-    return { value: await response.json(), next: response.headers.get('x-next-page') }
   }
-  private transient(status: number) {
-    return status === 408 || status === 429 || status >= 500
-  }
-  private pause(attempt: number) {
-    const delay = this.options.retryDelayMs ?? 0
-    return delay > 0
-      ? new Promise<void>((resolve) => setTimeout(resolve, delay * 2 ** attempt))
-      : Promise.resolve()
-  }
+
   async listGroups(p = 1) {
     const r = await this.request('groups?min_access_level=10', p)
     return page(
@@ -121,6 +139,7 @@ export class GitLabReadProvider implements ProviderReadContract {
           : [],
       ),
       r.next,
+      r.total,
     )
   }
   async listProjects(p = 1) {
@@ -149,6 +168,7 @@ export class GitLabReadProvider implements ProviderReadContract {
           : [],
       ),
       r.next,
+      r.total,
     )
   }
   async listUsers(id: number, p = 1) {
@@ -159,6 +179,7 @@ export class GitLabReadProvider implements ProviderReadContract {
         return u ? [u] : []
       }),
       r.next,
+      r.total,
     )
   }
   async listLabels(id: number, p = 1) {
@@ -170,6 +191,7 @@ export class GitLabReadProvider implements ProviderReadContract {
           : [],
       ),
       r.next,
+      r.total,
     )
   }
   async listIssues(id: number, p = 1) {
@@ -209,10 +231,13 @@ export class GitLabReadProvider implements ProviderReadContract {
               ? { mergeRequestCount: v.merge_requests_count }
               : {}),
             ...(typeof v.user_notes_count === 'number' ? { commentCount: v.user_notes_count } : {}),
+            kind:
+              v.type === 'TASK' || v.issue_type === 'task' ? ('task' as const) : ('issue' as const),
           },
         ]
       }),
       r.next,
+      r.total,
     )
   }
   async searchDiscussions(query: string, projectIds: readonly number[]) {
@@ -229,6 +254,80 @@ export class GitLabReadProvider implements ProviderReadContract {
     }
     return matches
   }
+  /**
+   * Parent/child links come from GraphQL: REST has no field for them. One call
+   * carries several projects, which keeps a Escopo with hundreds of
+   * repositories down to a handful of round trips.
+   */
+  async readHierarchy(
+    projects: readonly { readonly id: number; readonly fullPath: string }[],
+  ): Promise<ReadonlyMap<number, ProviderHierarchy>> {
+    const result = new Map<number, ProviderHierarchy>()
+    // GitLab caps a query at complexity 300; eight aliased projects fit under it.
+    const BATCH = 8
+    const batches: (readonly { readonly id: number; readonly fullPath: string }[])[] = []
+    for (let start = 0; start < projects.length; start += BATCH)
+      batches.push(projects.slice(start, start + BATCH))
+    // The shared HTTP gate decides how many of these actually fly at once.
+    await Promise.all(batches.map((batch) => this.#readHierarchyBatch(batch, result)))
+    return result
+  }
+
+  async #readHierarchyBatch(
+    batch: readonly { readonly id: number; readonly fullPath: string }[],
+    result: Map<number, ProviderHierarchy>,
+  ): Promise<void> {
+    // A project with more than one page of work items keeps its cursor here, so
+    // a repository with hundreds of items does not lose the links past the
+    // first page — its children would come back as top level Issues.
+    let pending = batch.map((project) => ({ project, after: undefined as string | undefined }))
+    for (let round = 0; pending.length && round < 50; round += 1) {
+      const query = `query{${pending
+        .map(
+          ({ project, after }, index) =>
+            `p${index}: project(fullPath:${JSON.stringify(project.fullPath)})` +
+            `{workItems(types:[ISSUE,TASK],first:100${after ? `,after:${JSON.stringify(after)}` : ''})` +
+            `{pageInfo{hasNextPage endCursor} nodes{iid widgets{... on WorkItemWidgetHierarchy{hasChildren parent{iid}}}}}}`,
+        )
+        .join(' ')}}`
+      let payload: any
+      try {
+        payload = (
+          await this.#http.json<any>(this.#http.graphqlUrl(), {
+            method: 'POST',
+            body: JSON.stringify({ query }),
+          })
+        ).value
+      } catch {
+        // Hierarchy only enriches the Issues; never fail a read of the Escopo for it.
+        return
+      }
+      const next: typeof pending = []
+      pending.forEach(({ project }, index) => {
+        const workItems = payload?.data?.[`p${index}`]?.workItems
+        const nodes = workItems?.nodes
+        if (!Array.isArray(nodes)) return
+        const links = result.get(project.id)
+        const parentOf = new Map<number, number>(links?.parentOf ?? [])
+        const withChildren = new Set<number>(links?.withChildren ?? [])
+        for (const node of nodes) {
+          const iid = Number(node?.iid)
+          if (!Number.isInteger(iid)) continue
+          const hierarchy = (node.widgets ?? []).find(
+            (widget: any) => widget && ('parent' in widget || 'hasChildren' in widget),
+          )
+          if (hierarchy?.hasChildren === true) withChildren.add(iid)
+          const parent = Number(hierarchy?.parent?.iid)
+          if (Number.isInteger(parent)) parentOf.set(iid, parent)
+        }
+        result.set(project.id, { parentOf, withChildren })
+        if (workItems.pageInfo?.hasNextPage === true && workItems.pageInfo.endCursor)
+          next.push({ project, after: String(workItems.pageInfo.endCursor) })
+      })
+      pending = next
+    }
+  }
+
   async readScope(scope: ScopeSelection) {
     const projects: ProviderProject[] = []
     for (let p = 1; ; p++) {
@@ -253,11 +352,32 @@ export class GitLabReadProvider implements ProviderReadContract {
   }
 }
 
-export async function readAllPages<T>(
+/**
+ * Every page of a collection, asking for the pages GitLab already announced in
+ * parallel. Sequential pagination was the slowest part of reading a large
+ * Escopo — thirteen round trips, one after the other, just to list projects.
+ */
+export async function readAllPagesFast<T>(
   read: (page: number) => Promise<ProviderReadPage<T>>,
 ): Promise<T[]> {
+  const first = await read(1)
+  if (!first.nextPage) return [...first.items]
+  if (first.totalPages === undefined) {
+    const rest = await readAllPages((page) => read(page), first.nextPage)
+    return [...first.items, ...rest]
+  }
+  const pages = await Promise.all(
+    Array.from({ length: first.totalPages - 1 }, (_, index) => read(index + 2)),
+  )
+  return [...first.items, ...pages.flatMap((batch) => [...batch.items])]
+}
+
+export async function readAllPages<T>(
+  read: (page: number) => Promise<ProviderReadPage<T>>,
+  from = 1,
+): Promise<T[]> {
   const results: T[] = []
-  let page: number | undefined = 1
+  let page: number | undefined = from
   while (page !== undefined) {
     const batch: ProviderReadPage<T> = await read(page)
     results.push(...batch.items)

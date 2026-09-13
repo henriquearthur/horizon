@@ -51,7 +51,7 @@ describe('AppHeader', () => {
 
   it('offers the opposite theme on the toggle', async () => {
     await renderHeader()
-    expect(screen.getByRole('button', { name: /tema claro/i })).toHaveTextContent('Claro')
+    expect(screen.getByRole('button', { name: /tema escuro/i })).toHaveTextContent('Escuro')
   })
 
   it('lets the user choose and persist the accent color', async () => {

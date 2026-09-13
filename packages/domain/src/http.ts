@@ -49,9 +49,20 @@ class HostGate {
   #nextSlot = 0
 
   constructor(
-    private readonly limit: number,
-    private readonly spacing: number,
+    private limit: number,
+    private spacing: number,
   ) {}
+
+  /**
+   * Widens the gate to the most permissive setting any caller asked for. The
+   * gate is shared per host, so the first adapter built must not pin the whole
+   * process to its own limits — reading a large Escopo needs a wider gate than
+   * writing one issue.
+   */
+  relax(limit: number, spacing: number): void {
+    this.limit = Math.max(this.limit, limit)
+    this.spacing = Math.min(this.spacing, spacing)
+  }
 
   async run<T>(task: () => Promise<T>): Promise<T> {
     if (this.#active >= this.limit) await new Promise<void>((resume) => this.#waiting.push(resume))
@@ -77,7 +88,10 @@ class HostGate {
 const gates = new Map<string, HostGate>()
 const gateFor = (host: string, limit: number, spacing: number): HostGate => {
   const existing = gates.get(host)
-  if (existing) return existing
+  if (existing) {
+    existing.relax(limit, spacing)
+    return existing
+  }
   const gate = new HostGate(limit, spacing)
   gates.set(host, gate)
   return gate
@@ -146,6 +160,11 @@ export class GitLabHttp {
       this.#options.maxConcurrency,
       Math.max(0, this.#options.minIntervalMs),
     )
+  }
+
+  /** Absolute URL of the GraphQL endpoint of the same instance. */
+  graphqlUrl(): URL {
+    return new URL(`${this.#prefix}/api/graphql`, this.baseUrl)
   }
 
   /** Absolute URL of an API path, with pagination applied when asked for. */

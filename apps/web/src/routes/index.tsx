@@ -12,8 +12,10 @@ import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
 export const Route = createFileRoute('/')({
   beforeLoad: async () => {
+    // An empty Escopo is not a reason to leave the app: the Escopo modal opens
+    // over the Inbox instead of a separate first-run page.
     const status = await getSetupStatus()
-    if (!status.reachable || status.scopeEmpty) throw redirect({ to: '/setup' })
+    if (!status.reachable) throw redirect({ to: '/setup' })
   },
   component: IssuesPage,
 })

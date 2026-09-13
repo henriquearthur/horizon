@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   ProviderComment,
   ProviderIssue,
@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ExternalLink,
   GitMerge,
+  ListTree,
   LoaderCircle,
   MessageSquare,
   Pencil,
@@ -32,6 +33,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Textarea } from '~/components/ui/textarea'
 import { absoluteTime, relativeTime, visibleLabels } from '~/lib/issue-presentation'
+import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
 
 export function IssueDetailPanel({
@@ -46,18 +48,26 @@ export function IssueDetailPanel({
   users = [],
   availableLabels = [],
   issueHref,
+  onIssueSelect,
+  subIssues = [],
+  onOpenIssue,
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
   provider: ProviderWriteContract
   onClose: () => void
-  onUpdated: (issue: ProviderIssue) => void
+  onUpdated?: (issue: ProviderIssue) => void
   onCommentCreated?: (comment: ProviderComment) => void
+  /** Child items of this Issue, as the Provider links them. */
+  subIssues?: readonly ProviderIssue[]
+  onOpenIssue?: (issue: ProviderIssue) => void
   loading?: boolean
   currentUser?: ProviderUser
   users?: readonly ProviderUser[]
   availableLabels?: readonly string[]
   issueHref: (iid: number) => string
+  /** Opens a `#123` reference from the text without reloading the page. */
+  onIssueSelect?: ((iid: number) => void) | undefined
 }) {
   const [editing, setEditing] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
@@ -73,6 +83,17 @@ export function IssueDetailPanel({
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
+  // Members and labels of the project are only needed while editing, so they
+  // are read on demand instead of travelling in every snapshot.
+  const metadata = useProjectMetadata(editing ? issue.projectId : undefined)
+  const people = metadata.users.length ? metadata.users : users
+  const labelOptions = useMemo(
+    () =>
+      metadata.labels.length
+        ? metadata.labels.filter((label) => !label.startsWith('horizon::'))
+        : availableLabels,
+    [metadata.labels, availableLabels],
+  )
   const discussion = comments.filter((item) => !item.system)
   const activity = comments.filter((item) => item.system)
 
@@ -100,7 +121,7 @@ export function IssueDetailPanel({
     setBusy(true)
     setError(undefined)
     try {
-      onUpdated(await action())
+      onUpdated?.(await action())
       return true
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível concluir a ação.')
@@ -211,7 +232,11 @@ export function IssueDetailPanel({
                 )
               }
             >
-              <SelectTrigger size="sm" aria-label="Status" className="gap-2 rounded-full">
+              <SelectTrigger
+                size="sm"
+                aria-label="Status"
+                className="gap-2.5 rounded-full *:data-[slot=select-value]:gap-2.5"
+              >
                 <SelectValue placeholder="Corrigir conflito…">
                   <StatusDot status={properties.status} />
                   <span>{properties.status}</span>
@@ -219,7 +244,7 @@ export function IssueDetailPanel({
               </SelectTrigger>
               <SelectContent>
                 {STATUS_VALUES.map((status) => (
-                  <SelectItem key={status} value={status}>
+                  <SelectItem key={status} value={status} className="gap-2.5 py-2">
                     <StatusDot status={status} />
                     {status}
                   </SelectItem>
@@ -241,7 +266,7 @@ export function IssueDetailPanel({
               <SelectTrigger
                 size="sm"
                 aria-label="Prioridade"
-                className="h-8 min-w-[148px] gap-2 rounded-lg border-input bg-background px-2.5 shadow-none"
+                className="h-8 min-w-[148px] gap-2.5 rounded-lg border-input bg-background px-2.5 shadow-none *:data-[slot=select-value]:gap-2.5"
               >
                 <SelectValue placeholder="Corrigir conflito…">
                   <PriorityBadge
@@ -253,7 +278,11 @@ export function IssueDetailPanel({
               </SelectTrigger>
               <SelectContent className="min-w-[168px] p-1">
                 {PRIORITY_VALUES.map((priority) => (
-                  <SelectItem key={priority} value={priority} className="py-2 pr-8 pl-2.5 text-xs">
+                  <SelectItem
+                    key={priority}
+                    value={priority}
+                    className="gap-2.5 py-2 pr-8 pl-2.5 text-xs"
+                  >
                     <PriorityBadge priority={priority} />
                     {priority}
                   </SelectItem>
@@ -334,27 +363,21 @@ export function IssueDetailPanel({
               {relativeTime(issue.createdAt) ?? '—'}
             </span>
           </DetailMeta>
-          {mergeRequests.length ? (
-            <DetailMeta label="Merge requests">
-              <span className="flex items-center gap-1.5 text-primary">
-                <GitMerge aria-hidden className="size-3" />
-                {mergeRequests.map((mr) => (
-                  <a
-                    key={mr.id}
-                    href={mr.webUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate hover:underline"
-                  >
-                    !{mr.iid} {mr.title}
-                  </a>
-                ))}
-              </span>
-            </DetailMeta>
-          ) : null}
         </dl>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 pt-4 pb-6">
+          {subIssues.length ? (
+            <CollapsibleSection title="Sub-issues" count={subIssues.length}>
+              <SubIssueList issues={subIssues} onOpenIssue={onOpenIssue} />
+            </CollapsibleSection>
+          ) : null}
+
+          {mergeRequests.length ? (
+            <CollapsibleSection title="Merge requests" count={mergeRequests.length}>
+              <MergeRequestList mergeRequests={mergeRequests} />
+            </CollapsibleSection>
+          ) : null}
+
           <CollapsibleSection title="Descrição">
             {editing ? (
               <div className="mb-6 space-y-3">
@@ -369,7 +392,7 @@ export function IssueDetailPanel({
                     label="Responsáveis"
                     placeholder="Ninguém"
                     searchPlaceholder="Buscar pessoa…"
-                    options={users.map((user) => ({
+                    options={people.map((user) => ({
                       value: String(user.id),
                       label: `${user.name} · @${user.username}`,
                       adornment: <UserAvatar user={user} size="xs" />,
@@ -383,7 +406,7 @@ export function IssueDetailPanel({
                     label="Labels"
                     placeholder="Sem labels"
                     searchPlaceholder="Buscar label…"
-                    options={availableLabels.map((label) => ({
+                    options={labelOptions.map((label) => ({
                       value: label,
                       label,
                       adornment: <LabelChip label={label} className="max-w-24" />,
@@ -399,7 +422,11 @@ export function IssueDetailPanel({
                 </Field>
               </div>
             ) : (
-              <Markdown className="text-[13px] leading-[1.7] text-foreground" issueHref={issueHref}>
+              <Markdown
+                className="text-[13px] leading-[1.7] text-foreground"
+                issueHref={issueHref}
+                onIssueSelect={onIssueSelect}
+              >
                 {issue.description}
               </Markdown>
             )}
@@ -416,6 +443,7 @@ export function IssueDetailPanel({
                   comments={discussion}
                   empty="Nenhum comentário ainda."
                   issueHref={issueHref}
+                  onIssueSelect={onIssueSelect}
                 />
               </CollapsibleSection>
             </TabsContent>
@@ -426,6 +454,7 @@ export function IssueDetailPanel({
                   empty="Nenhuma atividade registrada."
                   activity
                   issueHref={issueHref}
+                  onIssueSelect={onIssueSelect}
                 />
               </CollapsibleSection>
             </TabsContent>
@@ -545,8 +574,12 @@ export function IssueCreateForm({
   const [assigneeIds, setAssigneeIds] = useState<readonly number[]>([])
   const [labels, setLabels] = useState<readonly string[]>([])
   const [error, setError] = useState<string>()
-  const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
+  const metadata = useProjectMetadata(projectId)
+  const people = metadata.users.length ? metadata.users : users
+  const labelOptions = metadata.labels.length
+    ? metadata.labels.filter((label) => !label.startsWith('horizon::'))
+    : availableLabels
   return (
     <form
       className="space-y-3"
@@ -590,7 +623,7 @@ export function IssueCreateForm({
           label="Responsáveis do novo issue"
           placeholder="Ninguém"
           searchPlaceholder="Buscar pessoa…"
-          options={users.map((user) => ({
+          options={people.map((user) => ({
             value: String(user.id),
             label: `${user.name} · @${user.username}`,
             adornment: <UserAvatar user={user} size="xs" />,
@@ -604,7 +637,7 @@ export function IssueCreateForm({
           label="Labels do novo issue"
           placeholder="Sem labels"
           searchPlaceholder="Buscar label…"
-          options={availableLabels.map((label) => ({
+          options={labelOptions.map((label) => ({
             value: label,
             label,
             adornment: <LabelChip label={label} className="max-w-24" />,
@@ -622,6 +655,129 @@ export function IssueCreateForm({
         Criar issue
       </Button>
     </form>
+  )
+}
+
+/** Sub-issues, as Linear shows them: state, title and a way straight into each one. */
+function SubIssueList({
+  issues,
+  onOpenIssue,
+}: {
+  issues: readonly ProviderIssue[]
+  onOpenIssue?: ((issue: ProviderIssue) => void) | undefined
+}) {
+  const done = issues.filter((item) => readIssueProperties(item).status === 'Concluído').length
+  return (
+    <div className="space-y-1">
+      <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <ListTree aria-hidden className="size-3.5" />
+        <span className="tabular-nums">
+          {done} de {issues.length} concluído{issues.length === 1 ? '' : 's'}
+        </span>
+        <span className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+          <span
+            className="block h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${issues.length ? (done / issues.length) * 100 : 0}%` }}
+          />
+        </span>
+      </div>
+      {issues.map((child) => {
+        const properties = readIssueProperties(child)
+        return (
+          <button
+            key={child.id}
+            type="button"
+            onClick={() => onOpenIssue?.(child)}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
+          >
+            <StatusDot status={properties.status} conflict={properties.conflicts.status} />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
+              {child.title}
+            </span>
+            <PriorityBadge priority={properties.priority} />
+            <span className="flex-none font-mono text-[10.5px] text-muted-foreground">
+              #{child.iid}
+            </span>
+            <UserAvatar user={child.assignees[0]} size="xs" />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+const MERGE_REQUEST_STATES: Record<string, { label: string; className: string }> = {
+  merged: { label: 'merged', className: 'bg-primary/12 text-primary' },
+  opened: {
+    label: 'aberto',
+    className: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400',
+  },
+  closed: { label: 'fechado', className: 'bg-destructive/12 text-destructive' },
+  locked: { label: 'travado', className: 'bg-muted text-muted-foreground' },
+}
+
+/** The Merge Requests the Provider links to the Issue, as a readable list. */
+function MergeRequestList({ mergeRequests }: { mergeRequests: readonly ProviderMergeRequest[] }) {
+  return (
+    <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border">
+      {mergeRequests.map((mergeRequest) => {
+        const state = MERGE_REQUEST_STATES[mergeRequest.state] ?? {
+          label: mergeRequest.state,
+          className: 'bg-muted text-muted-foreground',
+        }
+        return (
+          <li key={mergeRequest.id}>
+            <a
+              href={mergeRequest.webUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex flex-col gap-1.5 px-3 py-2.5 transition-colors hover:bg-hover"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <GitMerge aria-hidden className="size-3.5 flex-none text-primary" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+                  {mergeRequest.draft ? (
+                    <span className="mr-1.5 text-muted-foreground">Rascunho</span>
+                  ) : null}
+                  {mergeRequest.title}
+                </span>
+                <span
+                  className={cn(
+                    'flex-none rounded-full px-2 py-px text-[10px] font-semibold',
+                    state.className,
+                  )}
+                >
+                  {state.label}
+                </span>
+              </div>
+              <div className="flex min-w-0 items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
+                <span className="flex-none font-semibold">!{mergeRequest.iid}</span>
+                {mergeRequest.sourceBranch ? (
+                  <span className="min-w-0 truncate">
+                    {mergeRequest.sourceBranch} → {mergeRequest.targetBranch}
+                  </span>
+                ) : null}
+                {mergeRequest.author ? (
+                  <span className="ml-auto flex flex-none items-center gap-1.5">
+                    <UserAvatar user={mergeRequest.author} size="xs" />
+                    {mergeRequest.author.name}
+                  </span>
+                ) : null}
+                {mergeRequest.updatedAt ? (
+                  <time
+                    className="flex-none whitespace-nowrap"
+                    dateTime={mergeRequest.updatedAt}
+                    title={absoluteTime(mergeRequest.updatedAt)}
+                  >
+                    {relativeTime(mergeRequest.updatedAt)}
+                  </time>
+                ) : null}
+              </div>
+            </a>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -717,11 +873,13 @@ function CommentList({
   empty,
   activity = false,
   issueHref,
+  onIssueSelect,
 }: {
   comments: readonly ProviderComment[]
   empty: string
   activity?: boolean
   issueHref: (iid: number) => string
+  onIssueSelect?: ((iid: number) => void) | undefined
 }) {
   if (!comments.length) return <p className="py-2 text-[12.5px] text-muted-foreground">{empty}</p>
   return (
@@ -746,6 +904,7 @@ function CommentList({
               className="text-[12.5px] leading-[1.65] text-foreground"
               empty=""
               issueHref={issueHref}
+              onIssueSelect={onIssueSelect}
             >
               {activity ? c.body.replace(/^\w+\s+(added|removed|changed)\s+/i, '') : c.body}
             </Markdown>

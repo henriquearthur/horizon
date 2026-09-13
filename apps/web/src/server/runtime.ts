@@ -7,6 +7,7 @@ import type {
 } from '@horizon/domain'
 import {
   invalidateIssues,
+  projectMetadata,
   providerCatalog,
   providerSnapshot,
   reader,
@@ -26,6 +27,11 @@ export class RuntimeService {
 
   snapshot(options: { force?: boolean } = {}): Promise<RuntimeSnapshot> {
     return this.snapshotOf(options.force ?? false)
+  }
+
+  /** Members and labels of one project, for the forms that need them. */
+  projectMetadata(projectId: number) {
+    return projectMetadata(projectId)
   }
 
   readIssue(projectId: number, iid: number) {

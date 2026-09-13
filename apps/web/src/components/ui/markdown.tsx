@@ -7,7 +7,7 @@ import { cn } from '~/lib/utils'
  * Markdown. Raw HTML is deliberately not enabled, so nothing a Provider sends
  * can inject markup into Horizon.
  */
-const components: Components = {
+const baseComponents: Components = {
   h1: ({ children }) => (
     <h1 className="mt-4 mb-2 text-[15px] font-semibold first:mt-0">{children}</h1>
   ),
@@ -24,7 +24,8 @@ const components: Components = {
   a: ({ children, href }) => (
     <a
       href={href}
-      {...(href?.startsWith('/?issue=') ? {} : { target: '_blank', rel: 'noreferrer' })}
+      target="_blank"
+      rel="noreferrer"
       className="font-medium text-primary underline-offset-2 hover:underline"
     >
       {children}
@@ -102,11 +103,45 @@ const components: Components = {
   img: () => null,
 }
 
+/** `#123` inside Horizon opens the panel in place instead of reloading the app. */
+const issueLinkComponents = (onIssueSelect: (iid: number) => void): Components => ({
+  ...baseComponents,
+  a: ({ children, href }) => {
+    const reference = /^\/\?.*issue=\d+%3A(\d+)|^\/\?.*issue=\d+:(\d+)/.exec(href ?? '')
+    const iid = Number(reference?.[1] ?? reference?.[2])
+    if (!Number.isInteger(iid))
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {children}
+        </a>
+      )
+    return (
+      <a
+        href={href}
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+          event.preventDefault()
+          onIssueSelect(iid)
+        }}
+        className="font-medium text-primary underline-offset-2 hover:underline"
+      >
+        {children}
+      </a>
+    )
+  },
+})
+
 export function Markdown({
   children,
   className,
   empty = 'Sem descrição.',
   issueHref,
+  onIssueSelect,
 }: {
   readonly children: string | null | undefined
   readonly className?: string
@@ -114,6 +149,8 @@ export function Markdown({
   readonly empty?: string
   /** Turns plain `#123` references into links to issues in Horizon. */
   readonly issueHref?: (iid: number) => string
+  /** Opens a `#123` reference inside Horizon, without leaving the page. */
+  readonly onIssueSelect?: ((iid: number) => void) | undefined
 }) {
   const source = (children ?? '').trim()
   if (!source) return <p className={cn('text-muted-foreground', className)}>{empty}</p>
@@ -121,7 +158,7 @@ export function Markdown({
     <div className={cn('[text-wrap:pretty]', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, ...(issueHref ? [remarkIssueReferences(issueHref)] : [])]}
-        components={components}
+        components={onIssueSelect ? issueLinkComponents(onIssueSelect) : baseComponents}
       >
         {source}
       </ReactMarkdown>

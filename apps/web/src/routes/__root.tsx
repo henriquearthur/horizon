@@ -7,7 +7,7 @@ import {
   useNavigate,
   useRouterState,
 } from '@tanstack/react-router'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { ScopeDialog } from '~/components/setup/scope-dialog'
@@ -80,6 +80,19 @@ function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate({ from: Route.fullPath })
   const runtime = useHorizonRuntime()
   const [scopeOpen, setScopeOpen] = useState(false)
+  const askedForScope = useRef(false)
+  const scopeEmpty = Boolean(
+    runtime.snapshot &&
+    !runtime.snapshot.scope.groups.length &&
+    !runtime.snapshot.scope.projects.length,
+  )
+  // A deployment without an Escopo opens straight into the Escopo modal; there
+  // is no separate first-run page.
+  useEffect(() => {
+    if (!scopeEmpty || askedForScope.current) return
+    askedForScope.current = true
+    setScopeOpen(true)
+  }, [scopeEmpty])
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
   const scopeTree = buildScopeTree(
@@ -135,7 +148,7 @@ function AppShell({ children }: { children: ReactNode }) {
 
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="pt-BR" data-theme="dark" data-accent="indigo" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme="light" data-accent="blue" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />

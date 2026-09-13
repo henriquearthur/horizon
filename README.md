@@ -20,8 +20,9 @@ cp .env.example .env.local   # then fill in HORIZON_GITLAB_URL and HORIZON_GITLA
 ```
 
 `.env.local` is read by the server only; the token never reaches the browser.
-On the first run, `/setup` asks only which groups and projects form the Escopo,
-and it explains what is missing when the environment is incomplete.
+On the first run Horizon opens the Escopo modal over the Inbox, where groups and
+projects are picked. `/setup` is only the diagnostics page shown when the
+environment is incomplete or the token does not reach GitLab.
 
 Horizon does not authenticate its own users: anything that can reach the port
 sees the Escopo. Keep it on a private network.

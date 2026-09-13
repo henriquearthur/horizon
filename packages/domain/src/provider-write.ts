@@ -10,6 +10,11 @@ export interface ProviderMergeRequest {
   readonly title: string
   readonly state: string
   readonly webUrl: string
+  readonly sourceBranch?: string
+  readonly targetBranch?: string
+  readonly draft?: boolean
+  readonly updatedAt?: string
+  readonly author?: ProviderUser
 }
 
 export interface ProviderComment {
@@ -189,12 +194,18 @@ export class GitLabWriteProvider implements ProviderWriteContract {
           typeof value.web_url !== 'string'
         )
           throw new ProviderWriteError('Resposta inválida do GitLab.', 502)
+        const author = asUser(value.author)
         items.push({
           id: value.id,
           iid: value.iid,
           title: value.title,
           state: value.state,
           webUrl: value.web_url,
+          ...(typeof value.source_branch === 'string' ? { sourceBranch: value.source_branch } : {}),
+          ...(typeof value.target_branch === 'string' ? { targetBranch: value.target_branch } : {}),
+          ...(typeof value.draft === 'boolean' ? { draft: value.draft } : {}),
+          ...(typeof value.updated_at === 'string' ? { updatedAt: value.updated_at } : {}),
+          ...(author ? { author } : {}),
         })
       }
       page = nextPageOf(result.response)
