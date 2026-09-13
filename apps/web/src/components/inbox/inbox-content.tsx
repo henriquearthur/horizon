@@ -254,6 +254,13 @@ export function InboxContent({
       : found
     return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
+  useEffect(() => {
+    const visible = new Set(issues.map((issue) => issueKey(issue)))
+    setBulkSelection((current) => {
+      const next = new Set([...current].filter((key) => visible.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [issues])
   /**
    * A sub-issue is shown under its parent, never twice: when both are in the
    * result set the child leaves the top level and hangs under the parent.
@@ -486,6 +493,20 @@ export function InboxContent({
                 <span className="text-xs text-muted-foreground">
                   {selectedIssues.length} selecionados
                 </span>
+                {bulkResults.size ? (
+                  <span className="text-[11px] text-muted-foreground" role="status">
+                    {
+                      selectedIssues.filter((issue) => bulkResults.get(issueKey(issue)) === true)
+                        .length
+                    }{' '}
+                    sucesso,{' '}
+                    {
+                      selectedIssues.filter((issue) => bulkResults.get(issueKey(issue)) === false)
+                        .length
+                    }{' '}
+                    falha
+                  </span>
+                ) : null}
                 <Select onValueChange={(v) => void runBulk('status', v)} disabled={bulkRunning}>
                   <SelectTrigger size="sm" aria-label="Status em massa">
                     <SelectValue placeholder="Status" />

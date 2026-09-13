@@ -80,14 +80,16 @@ function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate({ from: Route.fullPath })
   const runtime = useHorizonRuntime()
   const [scopeOpen, setScopeOpen] = useState(false)
-  const [favorites, setFavorites] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return []
+  const [favorites, setFavorites] = useState<string[]>([])
+  useEffect(() => {
     try {
-      return JSON.parse(localStorage.getItem('horizon.sidebar.favorites') ?? '[]')
+      const stored = JSON.parse(localStorage.getItem('horizon.sidebar.favorites') ?? '[]')
+      if (Array.isArray(stored))
+        setFavorites(stored.filter((value): value is string => typeof value === 'string'))
     } catch {
-      return []
+      /* ignore malformed browser storage */
     }
-  })
+  }, [])
   const toggleFavorite = (viewParam: string) =>
     setFavorites((current) => {
       const next = current.includes(viewParam)

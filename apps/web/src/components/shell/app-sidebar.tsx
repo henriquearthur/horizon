@@ -140,23 +140,25 @@ function ProjectRow({
   onToggle?: ((viewParam: string) => void) | undefined
 }) {
   return (
-    <Link
-      to="."
-      search={(previous) => ({ ...previous, view: item.viewParam })}
-      aria-current={active ? 'page' : undefined}
-      className={cn(rowClass(active), 'h-[26px] gap-2 font-mono text-[11.5px]')}
-    >
-      <span
-        aria-hidden
-        style={{ background: `oklch(0.64 0.12 ${hueFor(item.label)})` }}
-        className="size-1.5 flex-none rounded-full opacity-80"
-      />
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      <Count value={item.count} active={active} />
+    <div className="flex items-center">
+      <Link
+        to="."
+        search={(previous) => ({ ...previous, view: item.viewParam })}
+        aria-current={active ? 'page' : undefined}
+        className={cn(rowClass(active), 'h-[26px] min-w-0 flex-1 gap-2 font-mono text-[11.5px]')}
+      >
+        <span
+          aria-hidden
+          style={{ background: `oklch(0.64 0.12 ${hueFor(item.label)})` }}
+          className="size-1.5 flex-none rounded-full opacity-80"
+        />
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        <Count value={item.count} active={active} />
+      </Link>
       {onToggle ? (
         <FavoriteButton item={item} favorite={Boolean(favorite)} onToggle={onToggle} />
       ) : null}
-    </Link>
+    </div>
   )
 }
 
@@ -202,14 +204,14 @@ function GroupRow({
           <Folder aria-hidden className="size-3 flex-none opacity-60" />
           <span className="min-w-0 flex-1 truncate">{group.label}/</span>
           <Count value={group.count} active={active} />
-          {onToggleFavorite ? (
-            <FavoriteButton
-              item={{ viewParam: group.viewParam, label: `${group.label}/` }}
-              favorite={favorites?.includes(group.viewParam) ?? false}
-              onToggle={onToggleFavorite}
-            />
-          ) : null}
         </Link>
+        {onToggleFavorite ? (
+          <FavoriteButton
+            item={{ viewParam: group.viewParam, label: `${group.label}/` }}
+            favorite={favorites?.includes(group.viewParam) ?? false}
+            onToggle={onToggleFavorite}
+          />
+        ) : null}
       </div>
       {open && hasChildren ? (
         <div className="animate-rise ml-[21px] border-l border-sidebar-border/70 pl-1">
