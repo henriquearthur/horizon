@@ -114,4 +114,7 @@ export const absoluteTime = (value: string | undefined): string | undefined => {
 
 /** The labels a human cares about: everything that is not a Label Horizon. */
 export const visibleLabels = (labels: readonly string[]): readonly string[] =>
-  labels.filter((label) => !label.startsWith('horizon::'))
+  labels.filter((label) => !label.startsWith('horizon::') && !label.startsWith('type:'))
+
+export const issueTypes = (labels: readonly string[]): readonly string[] =>
+  labels.filter((label) => label.startsWith('type:'))

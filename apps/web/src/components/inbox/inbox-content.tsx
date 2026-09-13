@@ -3,7 +3,7 @@ import {
   PRIORITY_VALUES,
   STATUS_VALUES,
   filterIssues,
-  isIssueVisible,
+  visibleIssueHierarchy,
   groupIssues,
   readIssueProperties,
   searchIssues,
@@ -111,6 +111,9 @@ export function InboxContent({
   const [createProjectId, setCreateProjectId] = useState<number>()
   const [saveName, setSaveName] = useState('')
   const [savingView, setSavingView] = useState(false)
+  const [bulkSelection, setBulkSelection] = useState<ReadonlySet<string>>(new Set())
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const [bulkResults, setBulkResults] = useState<ReadonlyMap<string, boolean>>(new Map())
   const [discussionMatches, setDiscussionMatches] = useState<readonly ProviderDiscussionMatch[]>([])
   const updateFilter = <K extends keyof InboxFilters>(key: K, value: InboxFilters[K]) =>
     setFilters((current) => {
@@ -170,8 +173,60 @@ export function InboxContent({
     () => new Map(snapshot.projects.map((project) => [project.id, project])),
     [snapshot.projects],
   )
+  const selectedIssues = useMemo(
+    () => snapshot.issues.filter((i) => bulkSelection.has(issueKey(i))),
+    [snapshot.issues, bulkSelection],
+  )
+  const toggleBulk = (issue: ProviderIssue) =>
+    setBulkSelection((current) => {
+      setBulkResults(new Map())
+      const next = new Set(current)
+      const key = issueKey(issue)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  const runBulk = async (
+    kind: 'status' | 'priority' | 'assignee' | 'label-add' | 'label-remove',
+    value: string,
+  ) => {
+    setBulkRunning(true)
+    setBulkResults(new Map())
+    const results = new Map<string, boolean>()
+    const queue = [...selectedIssues]
+    const worker = async () => {
+      while (queue.length) {
+        const issue = queue.shift()
+        if (!issue) return
+        try {
+          if (kind === 'status' || kind === 'priority')
+            await provider.updateIssueProperties(issue.projectId, issue.iid, {
+              [kind]: value,
+            } as never)
+          else if (kind === 'assignee')
+            await provider.updateIssue(issue.projectId, issue.iid, {
+              assigneeIds: value === 'none' ? [] : [Number(value)],
+            })
+          else {
+            const labels =
+              kind === 'label-add'
+                ? [...new Set([...issue.labels, value])]
+                : issue.labels.filter((label) => label !== value)
+            await provider.updateIssue(issue.projectId, issue.iid, { labels })
+          }
+          results.set(issueKey(issue), true)
+        } catch {
+          results.set(issueKey(issue), false)
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, selectedIssues.length) }, worker))
+    setBulkResults(new Map(results))
+    setBulkRunning(false)
+    await refresh()
+  }
   const available = useMemo(() => {
-    let issues = snapshot.issues.filter((issue) => isIssueVisible(issue))
+    let issues = [...visibleIssueHierarchy(snapshot.issues)]
     if (view._tag === 'Project')
       issues = issues.filter((issue) => {
         const project = projectById.get(issue.projectId)
@@ -201,6 +256,13 @@ export function InboxContent({
       : found
     return sortIssues(filterIssues(searched, filters, snapshot.projects), sort)
   }, [available, discussionMatches, filters, query, snapshot.projects, sort])
+  useEffect(() => {
+    const visible = new Set(issues.map((issue) => issueKey(issue)))
+    setBulkSelection((current) => {
+      const next = new Set([...current].filter((key) => visible.has(key)))
+      return next.size === current.size ? current : next
+    })
+  }, [issues])
   /**
    * A sub-issue is shown under its parent, never twice: when both are in the
    * result set the child leaves the top level and hangs under the parent.
@@ -428,6 +490,101 @@ export function InboxContent({
         resultCount={`${issues.length} ${issues.length === 1 ? 'issue' : 'issues'}`}
         actions={
           <div className="flex items-center gap-1.5">
+            {selectedIssues.length ? (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {selectedIssues.length} selecionados
+                </span>
+                {bulkResults.size ? (
+                  <span className="text-[11px] text-muted-foreground" role="status">
+                    {
+                      selectedIssues.filter((issue) => bulkResults.get(issueKey(issue)) === true)
+                        .length
+                    }{' '}
+                    sucesso,{' '}
+                    {
+                      selectedIssues.filter((issue) => bulkResults.get(issueKey(issue)) === false)
+                        .length
+                    }{' '}
+                    falha
+                  </span>
+                ) : null}
+                <Select onValueChange={(v) => void runBulk('status', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Status em massa">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_VALUES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('priority', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Prioridade em massa">
+                    <SelectValue placeholder="Prioridade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_VALUES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('assignee', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Responsável em massa">
+                    <SelectValue placeholder="Responsável" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem responsável</SelectItem>
+                    {snapshot.users.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(v) => void runBulk('label-add', v)} disabled={bulkRunning}>
+                  <SelectTrigger size="sm" aria-label="Adicionar label em massa">
+                    <SelectValue placeholder="Adicionar label" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labels.map((label) => (
+                      <SelectItem key={label} value={label}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  onValueChange={(v) => void runBulk('label-remove', v)}
+                  disabled={bulkRunning}
+                >
+                  <SelectTrigger size="sm" aria-label="Remover label em massa">
+                    <SelectValue placeholder="Remover label" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labels.map((label) => (
+                      <SelectItem key={label} value={label}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => {
+                    setBulkSelection(new Set())
+                    setBulkResults(new Map())
+                  }}
+                >
+                  Limpar seleção
+                </Button>
+              </>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="xs" className="text-muted-foreground">
@@ -575,6 +732,8 @@ export function InboxContent({
             onOpen={openIssue}
             selectedId={selected?.id}
             onStatusChange={(issue, status) => void changeStatus(issue, status)}
+            selectedKeys={bulkSelection}
+            onToggleSelect={toggleBulk}
           />
         )}
         {creating ? (

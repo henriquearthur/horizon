@@ -43,6 +43,60 @@ const snapshot: RuntimeSnapshot = {
 describe('InboxContent', () => {
   beforeEach(() => localStorage.clear())
 
+  it.each(['list', 'kanban'] as const)(
+    'changes status from the %s icon without opening the issue',
+    async (mode) => {
+      const updateIssueProperties = vi.fn().mockResolvedValue(snapshot.issues[0])
+      const onIssueSelected = vi.fn()
+      render(
+        <InboxContent
+          snapshot={snapshot}
+          view={{ _tag: 'Builtin', id: 'general' }}
+          mode={mode}
+          query=""
+          provider={{ updateIssueProperties } as never}
+          refresh={vi.fn()}
+          refreshing={false}
+          onIssueSelected={onIssueSelected}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+      expect(await screen.findByRole('menuitem', { name: 'Em andamento' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Concluído' })).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Concluído' }))
+
+      expect(updateIssueProperties).toHaveBeenCalledWith(1, 1, { status: 'Concluído' })
+      expect(onIssueSelected).not.toHaveBeenCalled()
+    },
+  )
+
+  it('shows status mutation failures and remains retryable', async () => {
+    const updateIssueProperties = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Falha ao fechar no GitLab.'))
+      .mockResolvedValueOnce(snapshot.issues[0])
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        provider={{ updateIssueProperties } as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Concluído' }))
+    expect(await screen.findByText('Falha ao fechar no GitLab.')).toHaveAttribute('role', 'alert')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Alterar status: Backlog' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Em andamento' }))
+    expect(updateIssueProperties).toHaveBeenCalledTimes(2)
+  })
+
   it('names timestamp sort options explicitly', async () => {
     render(
       <InboxContent
@@ -202,10 +256,43 @@ describe('InboxContent', () => {
     )
 
     expect(screen.queryByText('Sub issue')).not.toBeInTheDocument()
+    expect(screen.getByText('0 de 1 concluídos')).toBeInTheDocument()
     await userEvent.click(
       screen.getByRole('button', { name: /Expandir sub-issues de Backlog issue/ }),
     )
     expect(screen.getByText('Sub issue')).toBeInTheDocument()
+    expect(screen.getByText('filho de #1')).toBeInTheDocument()
+  })
+
+  it('keeps an old parent and old siblings when one direct child remains open', async () => {
+    const old = '2025-01-01T00:00:00Z'
+    const parent = { ...snapshot.issues[0]!, state: 'closed' as const, closedAt: old }
+    const openChild = { ...snapshot.issues[0]!, id: 3, iid: 3, title: 'Open child', parentIid: 1 }
+    const oldChild = {
+      ...snapshot.issues[0]!,
+      id: 4,
+      iid: 4,
+      title: 'Old child',
+      parentIid: 1,
+      state: 'closed' as const,
+      closedAt: old,
+    }
+    render(
+      <InboxContent
+        snapshot={{ ...snapshot, issues: [parent, openChild, oldChild] }}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    expect(screen.getByText('1 de 2 concluídos')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Expandir sub-issues/ }))
+    expect(screen.getByText('Open child')).toBeInTheDocument()
+    expect(screen.getByText('Old child')).toBeInTheDocument()
   })
 
   it('keeps the Detail open when assigning the issue to the current user', async () => {

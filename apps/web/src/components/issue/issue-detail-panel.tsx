@@ -6,7 +6,7 @@ import type {
   ProviderUser,
   ProviderWriteContract,
 } from '@horizon/domain'
-import { PRIORITY_VALUES, readIssueProperties, STATUS_VALUES } from '@horizon/domain'
+import { PRIORITY_VALUES, readIssueProperties } from '@horizon/domain'
 import {
   ChevronDown,
   ExternalLink,
@@ -18,7 +18,14 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { LabelChip, PriorityBadge, StatusDot, UserAvatar } from '~/components/issue/issue-chrome'
+import {
+  IssueStatusMenu,
+  LabelChip,
+  TypeBadge,
+  PriorityBadge,
+  StatusDot,
+  UserAvatar,
+} from '~/components/issue/issue-chrome'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Markdown } from '~/components/ui/markdown'
@@ -32,7 +39,7 @@ import {
 } from '~/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Textarea } from '~/components/ui/textarea'
-import { absoluteTime, relativeTime, visibleLabels } from '~/lib/issue-presentation'
+import { absoluteTime, relativeTime, visibleLabels, issueTypes } from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
 
@@ -83,6 +90,7 @@ export function IssueDetailPanel({
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
+  const types = issueTypes(issue.labels)
   // Members and labels of the project are only needed while editing, so they
   // are read on demand instead of travelling in every snapshot.
   const metadata = useProjectMetadata(editing ? issue.projectId : undefined)
@@ -212,45 +220,31 @@ export function IssueDetailPanel({
             </h2>
           )}
 
-          {shownLabels.length ? (
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {shownLabels.map((label) => (
-                <LabelChip key={label} label={label} />
-              ))}
-            </div>
-          ) : null}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <TypeBadge types={types} />
+            {shownLabels.length ? (
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {shownLabels.map((label) => (
+                  <LabelChip key={label} label={label} />
+                ))}
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={properties.conflicts.status ? '' : properties.status}
-              disabled={busy}
-              onValueChange={(value) =>
-                void mutate(() =>
-                  provider.updateIssueProperties(issue.projectId, issue.iid, {
-                    status: value as (typeof STATUS_VALUES)[number],
-                  }),
-                )
-              }
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label="Status"
-                className="gap-2.5 rounded-full *:data-[slot=select-value]:gap-2.5"
-              >
-                <SelectValue placeholder="Corrigir conflito…">
-                  <StatusDot status={properties.status} />
-                  <span>{properties.status}</span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_VALUES.map((status) => (
-                  <SelectItem key={status} value={status} className="gap-2.5 py-2">
-                    <StatusDot status={status} />
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="inline-flex items-center gap-1 rounded-full border border-input bg-background pr-3 pl-1">
+              <IssueStatusMenu
+                status={properties.status}
+                conflict={properties.conflicts.status}
+                disabled={busy}
+                onChange={(status) =>
+                  void mutate(() =>
+                    provider.updateIssueProperties(issue.projectId, issue.iid, { status }),
+                  )
+                }
+              />
+              <span className="text-sm">{properties.status}</span>
+            </div>
 
             <Select
               value={properties.conflicts.priority ? '' : (properties.priority ?? 'Sem prioridade')}

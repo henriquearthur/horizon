@@ -148,3 +148,33 @@ export const isIssueVisible = (issue: ProviderIssue, now = Date.now()): boolean 
   const closedAt = Date.parse(issue.closedAt ?? '')
   return Number.isFinite(closedAt) && closedAt <= now && now - closedAt < 86_400_000
 }
+
+/**
+ * Applies retention without breaking a direct parent/child roll-up.
+ * An open child keeps its parent visible and, once the parent is eligible, all
+ * of its direct children travel with it regardless of their own close date.
+ */
+export const visibleIssueHierarchy = (
+  issues: readonly ProviderIssue[],
+  now = Date.now(),
+): readonly ProviderIssue[] => {
+  const openParentKeys = new Set(
+    issues
+      .filter((issue) => issue.state === 'opened' && issue.parentIid !== undefined)
+      .map((issue) => `${issue.projectId}:${issue.parentIid}`),
+  )
+  const eligibleParentKeys = new Set(
+    issues
+      .filter(
+        (issue) =>
+          isIssueVisible(issue, now) || openParentKeys.has(`${issue.projectId}:${issue.iid}`),
+      )
+      .map((issue) => `${issue.projectId}:${issue.iid}`),
+  )
+  return issues.filter(
+    (issue) =>
+      eligibleParentKeys.has(`${issue.projectId}:${issue.iid}`) ||
+      (issue.parentIid !== undefined &&
+        eligibleParentKeys.has(`${issue.projectId}:${issue.parentIid}`)),
+  )
+}

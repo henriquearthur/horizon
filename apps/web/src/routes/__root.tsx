@@ -8,7 +8,7 @@ import {
   useRouterState,
 } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { AppHeader } from '~/components/shell/app-header'
+import { AppHeader, type GlobalSearchTarget } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { ScopeDialog } from '~/components/setup/scope-dialog'
 import { EmptyState } from '~/components/shell/empty-state'
@@ -80,6 +80,24 @@ function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate({ from: Route.fullPath })
   const runtime = useHorizonRuntime()
   const [scopeOpen, setScopeOpen] = useState(false)
+  const [favorites, setFavorites] = useState<string[]>([])
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('horizon.sidebar.favorites') ?? '[]')
+      if (Array.isArray(stored))
+        setFavorites(stored.filter((value): value is string => typeof value === 'string'))
+    } catch {
+      /* ignore malformed browser storage */
+    }
+  }, [])
+  const toggleFavorite = (viewParam: string) =>
+    setFavorites((current) => {
+      const next = current.includes(viewParam)
+        ? current.filter((item) => item !== viewParam)
+        : [...current, viewParam]
+      localStorage.setItem('horizon.sidebar.favorites', JSON.stringify(next))
+      return next
+    })
   const askedForScope = useRef(false)
   const scopeEmpty = Boolean(
     runtime.snapshot &&
@@ -100,6 +118,19 @@ function AppShell({ children }: { children: ReactNode }) {
     runtime.snapshot?.projects ?? [],
     runtime.snapshot?.issues ?? [],
   )
+  const navigateFromSearch = (target: GlobalSearchTarget) => {
+    if (target.kind === 'action' && target.id === 'scope') return setScopeOpen(true)
+    navigate({
+      search: (previous) => ({
+        ...previous,
+        q: undefined,
+        ...(target.kind === 'issue' ? { issue: `${target.projectId}:${target.iid}` } : {}),
+        ...(target.kind === 'group' ? { view: `group:${target.path}`, issue: undefined } : {}),
+        ...(target.kind === 'project' ? { view: `project:${target.path}`, issue: undefined } : {}),
+        ...(target.kind === 'action' ? { view: undefined, issue: undefined } : {}),
+      }),
+    })
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -116,6 +147,14 @@ function AppShell({ children }: { children: ReactNode }) {
             replace: true,
           })
         }
+        {...(runtime.snapshot
+          ? {
+              issues: runtime.snapshot.issues,
+              groups: runtime.snapshot.groups,
+              projects: runtime.snapshot.projects,
+            }
+          : {})}
+        onNavigate={navigateFromSearch}
       />
       <div className="relative flex min-h-0 flex-1">
         <AppSidebar
@@ -138,6 +177,8 @@ function AppShell({ children }: { children: ReactNode }) {
           groups={scopeTree.groups}
           standaloneProjects={scopeTree.standaloneProjects}
           onConfigureScope={() => setScopeOpen(true)}
+          favorites={favorites}
+          onToggleFavorite={toggleFavorite}
         />
         {children}
       </div>
