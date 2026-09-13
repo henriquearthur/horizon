@@ -12,6 +12,7 @@ import {
   AssigneeStack,
   LabelChip,
   LabelOverflow,
+  TypeBadge,
   MetaCount,
   PriorityBadge,
   StatusDot,
@@ -22,7 +23,7 @@ import {
   projectPath,
   relativeTime,
   absoluteTime,
-  visibleLabels,
+  visibleLabels, issueTypes,
 } from '~/lib/issue-presentation'
 import { cn } from '~/lib/utils'
 
@@ -38,6 +39,8 @@ export interface IssueViewsProps {
   readonly onStatusChange?: (issue: ProviderIssue, status: IssueStatus) => void
   /** Sub-issues rolled up under each Issue, keyed by `projectId:iid`. */
   readonly childrenOf?: ReadonlyMap<string, readonly ProviderIssue[]>
+  readonly selectedKeys?: ReadonlySet<string>
+  readonly onToggleSelect?: (issue: ProviderIssue) => void
 }
 
 export const issueKey = (issue: Pick<ProviderIssue, 'projectId' | 'iid'>): string =>
@@ -139,6 +142,8 @@ function IssueRow({
   onToggle,
   depth = 0,
   onStatusChange,
+  onToggleSelect,
+  bulkSelected = false,
 }: {
   issue: ProviderIssue
   path: string
@@ -151,9 +156,12 @@ function IssueRow({
   onToggle?: () => void
   depth?: number
   onStatusChange?: (status: IssueStatus) => void
+  onToggleSelect?: () => void
+  bulkSelected?: boolean
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
+  const types = issueTypes(issue.labels)
 
   return (
     <div
@@ -188,6 +196,7 @@ function IssueRow({
             : 'before:opacity-0 hover:bg-hover focus-visible:bg-hover',
         )}
       >
+        {onToggleSelect ? <input type="checkbox" aria-label={`Selecionar ${issue.title}`} checked={bulkSelected} onChange={onToggleSelect} onClick={(e) => e.stopPropagation()} className="mt-1 size-3.5" /> : null}
         {onStatusChange ? (
           <IssueStatusMenu
             status={properties.status}
@@ -208,6 +217,7 @@ function IssueRow({
               {issue.title}
             </span>
             <div className="hidden max-w-[42%] shrink-0 items-center gap-1.5 sm:flex">
+              <TypeBadge types={types} />
               <IssueLabels labels={labels} limit={LIST_LABEL_LIMIT} />
             </div>
           </div>
@@ -241,6 +251,8 @@ function IssueCard({
   childCount = 0,
   doneChildren = 0,
   onStatusChange,
+  onToggleSelect,
+  bulkSelected = false,
 }: {
   issue: ProviderIssue
   path: string
@@ -254,9 +266,12 @@ function IssueCard({
   childCount?: number
   doneChildren?: number
   onStatusChange?: (status: IssueStatus) => void
+  onToggleSelect?: () => void
+  bulkSelected?: boolean
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
+  const types = issueTypes(issue.labels)
 
   return (
     <button
@@ -279,6 +294,7 @@ function IssueCard({
       )}
     >
       <div className="flex min-w-0 items-center gap-2 font-mono text-[10px] text-muted-foreground">
+        {onToggleSelect ? <input type="checkbox" aria-label={`Selecionar ${issue.title}`} checked={bulkSelected} onChange={onToggleSelect} onClick={(e) => e.stopPropagation()} className="size-3.5" /> : null}
         {onStatusChange ? (
           <IssueStatusMenu
             status={properties.status}
@@ -299,6 +315,7 @@ function IssueCard({
       <div className="text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground">
         {issue.title}
       </div>
+      <TypeBadge types={types} />
       {labels.length ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <IssueLabels labels={labels} limit={CARD_LABEL_LIMIT} />
@@ -331,6 +348,8 @@ export function IssueViews({
   selectedId,
   onStatusChange,
   childrenOf,
+  selectedKeys,
+  onToggleSelect,
 }: IssueViewsProps) {
   const [dragging, setDragging] = useState<number>()
   const [dragOver, setDragOver] = useState<string>()
@@ -436,6 +455,8 @@ export function IssueViews({
                           setDragOver(undefined)
                         }}
                         onStatusChange={(status) => onStatusChange?.(issue, status)}
+                        onToggleSelect={onToggleSelect ? () => onToggleSelect(issue) : undefined}
+                        bulkSelected={selectedKeys?.has(issueKey(issue))}
                       />
                     ))}
                     {!cards.length && (
@@ -490,6 +511,8 @@ export function IssueViews({
           onToggle={() => toggle(key)}
           depth={depth}
           onStatusChange={(status) => onStatusChange?.(issue, status)}
+          onToggleSelect={onToggleSelect ? () => onToggleSelect(issue) : undefined}
+          bulkSelected={selectedKeys?.has(issueKey(issue))}
         />
         {open ? children.map((child) => renderRow(child, depth + 1)) : null}
       </div>

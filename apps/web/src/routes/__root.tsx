@@ -80,6 +80,15 @@ function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate({ from: Route.fullPath })
   const runtime = useHorizonRuntime()
   const [scopeOpen, setScopeOpen] = useState(false)
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return []
+    try { return JSON.parse(localStorage.getItem('horizon.sidebar.favorites') ?? '[]') }
+    catch { return [] }
+  })
+  const toggleFavorite = (viewParam: string) => setFavorites((current) => {
+    const next = current.includes(viewParam) ? current.filter((item) => item !== viewParam) : [...current, viewParam]
+    localStorage.setItem('horizon.sidebar.favorites', JSON.stringify(next)); return next
+  })
   const askedForScope = useRef(false)
   const scopeEmpty = Boolean(
     runtime.snapshot &&
@@ -159,6 +168,8 @@ function AppShell({ children }: { children: ReactNode }) {
           groups={scopeTree.groups}
           standaloneProjects={scopeTree.standaloneProjects}
           onConfigureScope={() => setScopeOpen(true)}
+          favorites={favorites}
+          onToggleFavorite={toggleFavorite}
         />
         {children}
       </div>

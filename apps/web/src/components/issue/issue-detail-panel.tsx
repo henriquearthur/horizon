@@ -21,6 +21,7 @@ import {
 import {
   IssueStatusMenu,
   LabelChip,
+  TypeBadge,
   PriorityBadge,
   StatusDot,
   UserAvatar,
@@ -38,7 +39,7 @@ import {
 } from '~/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { Textarea } from '~/components/ui/textarea'
-import { absoluteTime, relativeTime, visibleLabels } from '~/lib/issue-presentation'
+import { absoluteTime, relativeTime, visibleLabels, issueTypes } from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
 import { cn } from '~/lib/utils'
 
@@ -89,6 +90,7 @@ export function IssueDetailPanel({
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
   const shownLabels = visibleLabels(issue.labels)
+  const types = issueTypes(issue.labels)
   // Members and labels of the project are only needed while editing, so they
   // are read on demand instead of travelling in every snapshot.
   const metadata = useProjectMetadata(editing ? issue.projectId : undefined)
@@ -218,13 +220,14 @@ export function IssueDetailPanel({
             </h2>
           )}
 
+          <div className="mb-3 flex flex-wrap gap-1.5"><TypeBadge types={types} />
           {shownLabels.length ? (
             <div className="mb-3 flex flex-wrap gap-1.5">
               {shownLabels.map((label) => (
                 <LabelChip key={label} label={label} />
               ))}
             </div>
-          ) : null}
+          ) : null}</div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-1 rounded-full border border-input bg-background pr-3 pl-1">
