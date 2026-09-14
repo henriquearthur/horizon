@@ -6,6 +6,7 @@ import {
   type IssueStatus,
   type ProviderIssue,
   type ProviderProject,
+  friendlyIssueId,
 } from '@horizon/domain'
 
 export interface StatusPresentation {
@@ -77,9 +78,7 @@ export const priorityOrder = (priority: IssuePriority | undefined): number =>
 /** Short human code for an Issue, e.g. `TA-482` for `infra/terraform-aws#482`. */
 export const issueCode = (issue: ProviderIssue, project: ProviderProject | undefined): string => {
   if (!project) return `#${issue.iid}`
-  const parts = project.path.split(/[-_]/).filter(Boolean)
-  const prefix = parts.length > 1 ? parts.map((part) => part[0]).join('') : project.path.slice(0, 2)
-  return `${prefix.toUpperCase()}-${issue.iid}`
+  return friendlyIssueId(project, issue.iid)
 }
 
 export const projectPath = (project: ProviderProject | undefined, projectId: number): string =>
