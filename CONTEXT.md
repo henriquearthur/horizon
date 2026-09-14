@@ -47,9 +47,14 @@ than one label for the same field is an explicit conflict, surfaced to the user.
 
 ## Status
 
-`Backlog`, `Em andamento` or `Concluído`. An Issue with no status Label Horizon
-is Backlog. `Concluído` closes the Issue in the Provider; the other two reopen
-it.
+The stage of an Issue: `Backlog`, `Em andamento`, `Pausada` or `Concluído`;
+`Pausada` means implementation has stopped and can be resumed by another agent.
+`Concluído` corresponds to a closed Issue in the Provider; the other stages
+correspond to an open Issue (without a Status label, Provider state determines
+`Backlog` or `Concluído`).
+
+`Pausada` is an accepted domain addition, pending implementation; see
+[the MCP decision](docs/adr/0003-mcp-interface.md).
 
 ## Prioridade
 
@@ -83,3 +88,21 @@ scoped label `horizon::initiative::<id>`, so GitLab keeps an Issue in at most
 one Projeto. The names are Horizon-owned data and live next to the saved Views;
 an id found on an Issue but missing from the catalog still shows up, named
 after its id.
+
+## Friendly Issue ID
+
+The human-readable short code displayed for an Issue, such as `DC-123` for
+Issue 123 in `data-control`. It is a convenience reference, not a globally
+unique identity; see [friendly ID resolution](docs/adr/0004-friendly-issue-id-resolution.md).
+
+## Agent Session Metadata
+
+The model, harness and session ID identifying the agent session responsible
+for a comment submitted through Horizon's MCP interface. Human comments from
+the web interface do not require this attribution.
+
+## MCP
+
+Horizon's agent-facing interface to the same Issues, Escopo, Views and Projetos
+available through the web interface. Its accepted design is recorded in
+[the MCP decision](docs/adr/0003-mcp-interface.md); implementation is pending.
