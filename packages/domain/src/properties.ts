@@ -1,6 +1,6 @@
 import type { ProviderIssue } from './provider-read.ts'
 
-export const STATUS_VALUES = ['Backlog', 'Em andamento', 'Concluído'] as const
+export const STATUS_VALUES = ['Backlog', 'Em andamento', 'Pausada', 'Concluído'] as const
 export const PRIORITY_VALUES = [
   'P1 urgente',
   'P2 alta',

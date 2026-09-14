@@ -160,7 +160,13 @@ export function StatusDot({
     )
   }
   const Icon =
-    status === 'Concluído' ? CircleCheck : status === 'Em andamento' ? CircleDot : CircleDashed
+    status === 'Concluído'
+      ? CircleCheck
+      : status === 'Em andamento'
+        ? CircleDot
+        : status === 'Pausada'
+          ? CircleSlash
+          : CircleDashed
   return (
     <span title={title ?? status} className="inline-flex shrink-0">
       <Icon
