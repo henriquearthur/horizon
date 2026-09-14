@@ -27,6 +27,11 @@ const STATUS_PRESENTATION: Readonly<Record<IssueStatus, StatusPresentation>> = {
     color: 'var(--status-progress)',
     surface: 'bg-status-progress/15 text-status-progress',
   },
+  Pausada: {
+    status: 'Pausada',
+    color: 'var(--status-paused)',
+    surface: 'bg-status-paused/15 text-status-paused',
+  },
   Concluído: {
     status: 'Concluído',
     color: 'var(--status-done)',

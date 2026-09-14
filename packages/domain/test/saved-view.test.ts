@@ -10,6 +10,14 @@ describe('SavedView', () => {
     })
   })
 
+  it('preserves existing status filters and accepts the paused status', () => {
+    for (const status of ['Backlog', 'Em andamento', 'Pausada', 'Concluído']) {
+      expect(
+        Schema.decodeUnknownSync(SavedView)({ id: `v-${status}`, name: status, status }),
+      ).toMatchObject({ status })
+    }
+  })
+
   it('rejects a saved View without a name', () => {
     expect(() => Schema.decodeUnknownSync(SavedView)({ id: 'v1' })).toThrow()
   })
