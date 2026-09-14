@@ -5,6 +5,8 @@ import {
   selectedProjects,
   type ProviderReadContract,
   type ScopeSelection,
+  type ProviderWriteContract,
+  withBlockingLink,
 } from '@horizon/domain'
 
 export type McpErrorCode = 'validation_error' | 'scope_error' | 'not_found' | 'conflict' | 'provider_error'
@@ -13,6 +15,7 @@ export class McpToolError extends Error {
 }
 export type McpTool = { name: string; description: string; inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] } }
 export type ReadContext = { provider: ProviderReadContract; scope: ScopeSelection }
+export type WriteContext = ReadContext & { provider: ProviderReadContract & Partial<ProviderWriteContract> }
 
 const tools: McpTool[] = [
   ['read_scope', 'Read the configured scope', {}], ['list_groups', 'List groups in the configured scope', {}],
@@ -21,6 +24,10 @@ const tools: McpTool[] = [
   ['get_comments', 'Read comments for an issue', { reference: { type: 'string' } }],
   ['get_metadata', 'Read users and labels for an issue project', { reference: { type: 'string' } }],
   ['get_hierarchy', 'Read sub-issues and blocking links', {}], ['list_views', 'List available views', {}],
+  ['create_issue', 'Create an issue', { projectId: {type:'number'}, title:{type:'string'}, description:{type:'string'}, labels:{type:'array'}, assigneeIds:{type:'array'} }],
+  ['update_issue', 'Update an issue', { reference:{type:'string'} }], ['create_comment','Create a comment',{reference:{type:'string'},body:{type:'string'}}],
+  ['set_issue_properties','Set status, priority, labels and assignees',{reference:{type:'string'}}], ['create_sub_issue','Create a sub-issue',{parent:{type:'string'},title:{type:'string'}}],
+  ['create_blocking','Create a blocking link',{source:{type:'string'},target:{type:'string'}}],
 ].map(([name, description, properties]) => ({ name: name as string, description: description as string, inputSchema: { type: 'object', properties: properties as Record<string, unknown>, ...(Object.keys(properties as object).length ? { required: Object.keys(properties as object) } : {}) } }))
 
 export const readTools = (): readonly McpTool[] => tools
@@ -47,4 +54,26 @@ export async function callReadTool(ctx: ReadContext, name: string, args: Record<
       default: throw new McpToolError('not_found', `Unknown tool: ${name}`)
     }
   } catch (e) { if (e instanceof McpToolError) throw e; throw new McpToolError('provider_error', e instanceof Error ? e.message : 'Provider error', e) }
+}
+
+const writeProvider = (ctx: WriteContext, method: keyof ProviderWriteContract): any => {
+  const fn = ctx.provider[method]
+  if (typeof fn !== 'function') throw new McpToolError('provider_error', `Provider não implementa ${String(method)}`)
+  return fn.bind(ctx.provider)
+}
+const resolved = async (ctx: WriteContext, ref: unknown) => issue(ctx, ref)
+export async function callWriteTool(ctx: WriteContext, name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  try {
+    const requireString = (key: string) => { const v=args[key]; if(typeof v!=='string'||!v.trim()) throw new McpToolError('validation_error', `${key} is required`); return v }
+    if (name === 'create_issue') {
+      if (!Number.isInteger(args.projectId) || typeof args.title !== 'string' || !args.title.trim()) throw new McpToolError('validation_error','projectId and title are required')
+      const d=await readScope(ctx); if(!d.projects.some(p=>p.id===args.projectId)) throw new McpToolError('scope_error','Project outside configured scope')
+      return await writeProvider(ctx,'createIssue')({projectId:args.projectId,title:args.title,...(typeof args.description==='string'?{description:args.description}:{}),...(Array.isArray(args.labels)?{labels:args.labels}:{}),...(Array.isArray(args.assigneeIds)?{assigneeIds:args.assigneeIds}: {})})
+    }
+    if(name==='create_comment'){const i:any=await resolved(ctx,requireString('reference')); const body=requireString('body'); return await writeProvider(ctx,'createComment')(i.projectId,i.iid,body)}
+    if(name==='update_issue'){const i:any=await resolved(ctx,requireString('reference')); return await writeProvider(ctx,'updateIssue')(i.projectId,i.iid,args)}
+    if(name==='set_issue_properties'){const i:any=await resolved(ctx,requireString('reference')); const changes:any={}; for(const k of ['status','priority']) if(typeof args[k]==='string') changes[k]=args[k]; if(Array.isArray(args.labels)) changes.labels=args.labels; return await writeProvider(ctx,'updateIssueProperties')(i.projectId,i.iid,changes)}
+    if(name==='create_blocking'){const s:any=await resolved(ctx,requireString('source')); const t:any=await resolved(ctx,requireString('target')); return await writeProvider(ctx,'updateIssue')(s.projectId,s.iid,{labels:withBlockingLink(s,t)})}
+    throw new McpToolError('not_found',`Unknown tool: ${name}`)
+  } catch(e){ if(e instanceof McpToolError) throw e; throw new McpToolError('provider_error',e instanceof Error?e.message:'Provider error',e) }
 }
