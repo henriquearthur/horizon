@@ -7,6 +7,7 @@ import {
   type ScopeSelection,
   type ProviderWriteContract,
   withBlockingLink,
+  readIssueProperties,
 } from '@horizon/domain'
 
 export type McpErrorCode = 'validation_error' | 'scope_error' | 'not_found' | 'conflict' | 'provider_error'
@@ -28,6 +29,10 @@ const tools: McpTool[] = [
   ['update_issue', 'Update an issue', { reference:{type:'string'} }], ['create_comment','Create a comment',{reference:{type:'string'},body:{type:'string'}}],
   ['set_issue_properties','Set status, priority, labels and assignees',{reference:{type:'string'}}], ['create_sub_issue','Create a sub-issue',{parent:{type:'string'},title:{type:'string'}}],
   ['create_blocking','Create a blocking link',{source:{type:'string'},target:{type:'string'}}],
+  ['start_issue','Start implementation of an issue',{reference:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
+  ['handoff_issue','Pause implementation and record handoff',{reference:{type:'string'},handoff_text:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
+  ['resume_issue','Resume implementation of an issue',{reference:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
+  ['complete_issue','Complete implementation and record report',{reference:{type:'string'},report:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
 ].map(([name, description, properties]) => ({ name: name as string, description: description as string, inputSchema: { type: 'object', properties: properties as Record<string, unknown>, ...(Object.keys(properties as object).length ? { required: Object.keys(properties as object) } : {}) } }))
 
 export const readTools = (): readonly McpTool[] => tools
@@ -74,6 +79,33 @@ export async function callWriteTool(ctx: WriteContext, name: string, args: Recor
     if(name==='update_issue'){const i:any=await resolved(ctx,requireString('reference')); return await writeProvider(ctx,'updateIssue')(i.projectId,i.iid,args)}
     if(name==='set_issue_properties'){const i:any=await resolved(ctx,requireString('reference')); const changes:any={}; for(const k of ['status','priority']) if(typeof args[k]==='string') changes[k]=args[k]; if(Array.isArray(args.labels)) changes.labels=args.labels; return await writeProvider(ctx,'updateIssueProperties')(i.projectId,i.iid,changes)}
     if(name==='create_blocking'){const s:any=await resolved(ctx,requireString('source')); const t:any=await resolved(ctx,requireString('target')); return await writeProvider(ctx,'updateIssue')(s.projectId,s.iid,{labels:withBlockingLink(s,t)})}
+    if (['start_issue','handoff_issue','resume_issue','complete_issue'].includes(name)) {
+      const i:any = await resolved(ctx, requireString('reference'))
+      for (const key of ['model','harness','session_id']) requireString(key)
+      const target = ({start_issue:'in_progress',handoff_issue:'paused',resume_issue:'in_progress',complete_issue:'completed'} as any)[name]
+      const current = readIssueProperties(i).status
+      const statusMap:any = {Backlog:'backlog','Em andamento':'in_progress','Pausada':'paused','Concluído':'completed'}
+      const currentKey = statusMap[current] ?? 'backlog'
+      const allowed:any = {start_issue:['backlog','in_progress'],handoff_issue:['in_progress','paused'],resume_issue:['paused','in_progress'],complete_issue:['backlog','in_progress','paused','completed']}
+      if (!allowed[name].includes(currentKey)) throw new McpToolError('conflict', `Invalid lifecycle transition from ${currentKey}`, { currentStatus: currentKey, targetStatus: target })
+      const body = name === 'handoff_issue' ? requireString('handoff_text') : name === 'complete_issue' ? requireString('report') : `${name === 'start_issue' ? 'Implementation started.' : 'Implementation resumed.'}`
+      const citation = `> **Model:** \`${args.model}\` · **Harness:** \`${args.harness}\` · **Session:** \`${args.session_id}\``
+      const text = `${citation}\n\n${body}`
+      const assigneeIds = Array.isArray(args.assigneeIds) ? args.assigneeIds : undefined
+      const effects:{status:'applied'|'failed'|'unknown';comment:'applied'|'failed'|'unknown';assignment:'applied'|'failed'|'unknown'} = {status:'applied',comment:'unknown',assignment:'applied'}
+      try {
+        if (currentKey !== target) {
+          await writeProvider(ctx,'updateIssueProperties')(i.projectId, i.iid, {status: ({backlog:'Backlog',in_progress:'Em andamento',paused:'Pausada',completed:'Concluído'} as any)[target]})
+          if (assigneeIds) await writeProvider(ctx,'updateIssue')(i.projectId, i.iid, {assigneeIds})
+        } else if (assigneeIds) await writeProvider(ctx,'updateIssue')(i.projectId, i.iid, {assigneeIds})
+      } catch (e) { effects.status = 'failed'; effects.assignment = 'failed'; throw new McpToolError('provider_error','Lifecycle status update failed',{effects,error:e instanceof Error?e.message:e}) }
+      try {
+        const comments = await writeProvider(ctx,'listComments')(i.projectId,i.iid)
+        if (!comments.some((c:any)=>c.body===text)) await writeProvider(ctx,'createComment')(i.projectId,i.iid,text)
+        effects.comment='applied'
+      } catch (e) { throw new McpToolError('provider_error','Lifecycle comment update failed',{effects,error:e instanceof Error?e.message:e}) }
+      return {issue:i, status:target, effects, citation}
+    }
     throw new McpToolError('not_found',`Unknown tool: ${name}`)
   } catch(e){ if(e instanceof McpToolError) throw e; throw new McpToolError('provider_error',e instanceof Error?e.message:'Provider error',e) }
 }
