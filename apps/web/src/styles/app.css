@@ -47,6 +47,7 @@
   --status-backlog: oklch(0.6 0.017 240);
   --status-progress: oklch(0.66 0.14 72);
   --status-done: oklch(0.58 0.14 155);
+  --status-paused: oklch(0.62 0.14 82);
   --priority-1: oklch(0.56 0.2 25);
   --priority-2: oklch(0.63 0.16 55);
   --priority-3: oklch(0.56 0.11 240);
@@ -115,6 +116,7 @@
   --status-backlog: oklch(0.68 0.017 240);
   --status-progress: oklch(0.78 0.14 75);
   --status-done: oklch(0.74 0.15 155);
+  --status-paused: oklch(0.78 0.14 82);
   --priority-1: oklch(0.7 0.185 25);
   --priority-2: oklch(0.77 0.14 58);
   --priority-3: oklch(0.73 0.11 245);
@@ -194,6 +196,7 @@
   --color-status-backlog: var(--status-backlog);
   --color-status-progress: var(--status-progress);
   --color-status-done: var(--status-done);
+  --color-status-paused: var(--status-paused);
   --color-priority-1: var(--priority-1);
   --color-priority-2: var(--priority-2);
   --color-priority-3: var(--priority-3);
