@@ -26,16 +26,18 @@ const tools: McpTool[] = [
   ['get_metadata', 'Read users and labels for an issue project', { reference: { type: 'string' } }],
   ['get_hierarchy', 'Read sub-issues and blocking links', {}], ['list_views', 'List available views', {}],
   ['create_issue', 'Create an issue', { projectId: {type:'number'}, title:{type:'string'}, description:{type:'string'}, labels:{type:'array'}, assigneeIds:{type:'array'} }],
-  ['update_issue', 'Update an issue', { reference:{type:'string'} }], ['create_comment','Create a comment',{reference:{type:'string'},body:{type:'string'}}],
+  ['update_issue', 'Update an issue', { reference:{type:'string'} }], ['create_comment','Create a comment',{reference:{type:'string'},body:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'}}],
   ['set_issue_properties','Set status, priority, labels and assignees',{reference:{type:'string'}}], ['create_sub_issue','Create a sub-issue',{parent:{type:'string'},title:{type:'string'}}],
   ['create_blocking','Create a blocking link',{source:{type:'string'},target:{type:'string'}}],
   ['start_issue','Start implementation of an issue',{reference:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
   ['handoff_issue','Pause implementation and record handoff',{reference:{type:'string'},handoff_text:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
   ['resume_issue','Resume implementation of an issue',{reference:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
   ['complete_issue','Complete implementation and record report',{reference:{type:'string'},report:{type:'string'},model:{type:'string'},harness:{type:'string'},session_id:{type:'string'},assigneeIds:{type:'array'}}],
-].map(([name, description, properties]) => ({ name: name as string, description: description as string, inputSchema: { type: 'object', properties: properties as Record<string, unknown>, ...(Object.keys(properties as object).length ? { required: Object.keys(properties as object) } : {}) } }))
+].map(([name, description, properties]) => ({ name: name as string, description: description as string, inputSchema: { type: 'object', properties: properties as Record<string, unknown>, ...(Object.keys(properties as object).length ? { required: Object.keys(properties as object).filter(k => ['reference','title','projectId','body','parent','source','target','model','harness','session_id','handoff_text','report'].includes(k)) } : {}) } }))
 
-export const readTools = (): readonly McpTool[] => tools
+const readNames = new Set(['read_scope','list_groups','list_projects','list_issues','get_issue','get_comments','get_metadata','get_hierarchy','list_views'])
+export const readTools = (): readonly McpTool[] => tools.filter(t => readNames.has(t.name))
+export const allTools = (): readonly McpTool[] => tools
 const readScope = async (ctx: ReadContext) => ctx.provider.readScope(ctx.scope)
 const issue = async (ctx: ReadContext, reference: unknown) => {
   if (typeof reference !== 'string' || !reference.trim()) throw new McpToolError('validation_error', 'reference is required')
@@ -50,12 +52,12 @@ export async function callReadTool(ctx: ReadContext, name: string, args: Record<
       case 'read_scope': return readScope(ctx)
       case 'list_groups': { const d = await readScope(ctx); return selectedGroups(d.groups, ctx.scope) }
       case 'list_projects': { const d = await readScope(ctx); return selectedProjects(d.projects, ctx.scope) }
-      case 'list_issues': { const d = await readScope(ctx); const ids = new Set(selectedProjects(d.projects, ctx.scope).map(p => p.id)); return d.issues.filter(i => ids.has(i.projectId)) }
+      case 'list_issues': { const d = await readScope(ctx); const ids = new Set(selectedProjects(d.projects, ctx.scope).map(p => p.id)); return d.issues.filter(i => ids.has(i.projectId)).map(i => ({...i, technicalReference:`${i.projectId}#${i.iid}`})) }
       case 'get_issue': return issue(ctx, args.reference)
-      case 'get_comments': return { issue: await issue(ctx, args.reference), comments: [] }
+      case 'get_comments': { const i:any = await issue(ctx, args.reference); const fn = (ctx.provider as any).listComments; if(typeof fn !== 'function') throw new McpToolError('provider_error','Provider não implementa listComments'); return { issue:i, comments: await fn.call(ctx.provider,i.projectId,i.iid) } }
       case 'get_metadata': { const i: any = await issue(ctx, args.reference); return { users: await readAllPages(p => ctx.provider.listUsers(i.projectId, p)), labels: await readAllPages(p => ctx.provider.listLabels(i.projectId, p)) } }
-      case 'get_hierarchy': { const d = await readScope(ctx); const h = ctx.provider.readHierarchy ? await ctx.provider.readHierarchy(d.projects.map(p => ({ id: p.id, fullPath: `${p.namespace}/${p.path}` }))) : new Map(); return { issues: d.issues, hierarchy: h } }
-      case 'list_views': return [{ id: 'general', title: 'General', builtin: true }]
+      case 'get_hierarchy': { const d = await readScope(ctx); const h = ctx.provider.readHierarchy ? await ctx.provider.readHierarchy(d.projects.map(p => ({ id: p.id, fullPath: `${p.namespace}/${p.path}` }))) : new Map(); return { issues: d.issues.map(i=>({...i, technicalReference:`${i.projectId}#${i.iid}`})), hierarchy: h } }
+      case 'list_views': { const fn = (ctx.provider as any).listViews; if(typeof fn !== 'function') throw new McpToolError('provider_error','Provider não implementa listViews'); return await fn.call(ctx.provider) }
       default: throw new McpToolError('not_found', `Unknown tool: ${name}`)
     }
   } catch (e) { if (e instanceof McpToolError) throw e; throw new McpToolError('provider_error', e instanceof Error ? e.message : 'Provider error', e) }
@@ -75,10 +77,16 @@ export async function callWriteTool(ctx: WriteContext, name: string, args: Recor
       const d=await readScope(ctx); if(!d.projects.some(p=>p.id===args.projectId)) throw new McpToolError('scope_error','Project outside configured scope')
       return await writeProvider(ctx,'createIssue')({projectId:args.projectId,title:args.title,...(typeof args.description==='string'?{description:args.description}:{}),...(Array.isArray(args.labels)?{labels:args.labels}:{}),...(Array.isArray(args.assigneeIds)?{assigneeIds:args.assigneeIds}: {})})
     }
-    if(name==='create_comment'){const i:any=await resolved(ctx,requireString('reference')); const body=requireString('body'); return await writeProvider(ctx,'createComment')(i.projectId,i.iid,body)}
+    if(name==='create_comment'){const i:any=await resolved(ctx,requireString('reference')); const body=requireString('body'); for(const key of ['model','harness','session_id']) requireString(key); const citation=`> **Model:** \`${args.model}\` · **Harness:** \`${args.harness}\` · **Session:** \`${args.session_id}\``; return await writeProvider(ctx,'createComment')(i.projectId,i.iid,`${citation}\n\n${body}`)}
     if(name==='update_issue'){const i:any=await resolved(ctx,requireString('reference')); return await writeProvider(ctx,'updateIssue')(i.projectId,i.iid,args)}
     if(name==='set_issue_properties'){const i:any=await resolved(ctx,requireString('reference')); const changes:any={}; for(const k of ['status','priority']) if(typeof args[k]==='string') changes[k]=args[k]; if(Array.isArray(args.labels)) changes.labels=args.labels; return await writeProvider(ctx,'updateIssueProperties')(i.projectId,i.iid,changes)}
     if(name==='create_blocking'){const s:any=await resolved(ctx,requireString('source')); const t:any=await resolved(ctx,requireString('target')); return await writeProvider(ctx,'updateIssue')(s.projectId,s.iid,{labels:withBlockingLink(s,t)})}
+    if(name==='create_sub_issue') {
+      const parent = await resolved(ctx, requireString('parent')); const title = requireString('title')
+      const fn = (ctx.provider as any).createSubIssue
+      if (typeof fn !== 'function') throw new McpToolError('provider_error','Provider não implementa createSubIssue')
+      return await fn.call(ctx.provider, (parent as any).projectId, (parent as any).iid, { title })
+    }
     if (['start_issue','handoff_issue','resume_issue','complete_issue'].includes(name)) {
       const i:any = await resolved(ctx, requireString('reference'))
       for (const key of ['model','harness','session_id']) requireString(key)

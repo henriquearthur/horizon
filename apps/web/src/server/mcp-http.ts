@@ -1,4 +1,4 @@
-import { callReadTool, callWriteTool, readTools, type ReadContext, type WriteContext } from '../../../../packages/mcp/src/index.ts'
+import { callReadTool, callWriteTool, readTools, allTools, type ReadContext, type WriteContext } from '../../../../packages/mcp/src/index.ts'
 import { reader, writer } from './gitlab'
 import { scopeStore } from './scope-store'
 
@@ -14,7 +14,7 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
     if (body.jsonrpc !== '2.0' || typeof body.method !== 'string') return rpcError(id, -32600, 'Invalid Request')
     if (body.method === 'initialize') return rpcResult(id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'horizon', version: '0.0.0' } })
     if (body.method === 'notifications/initialized') return new Response(null, { status: 202 })
-    if (body.method === 'tools/list') return rpcResult(id, { tools: readTools() })
+    if (body.method === 'tools/list') return rpcResult(id, { tools: allTools() })
     if (body.method === 'tools/call') {
       const name = body.params?.name
       if (typeof name !== 'string') return rpcError(id, -32602, 'name is required')
