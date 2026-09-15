@@ -6,6 +6,7 @@ import {
   type ReadContext,
   type WriteContext,
 } from '../../../../packages/mcp/src/index.ts'
+import type { ProviderReadContract, ProviderWriteContract } from '@horizon/domain'
 import { reader, writer } from './gitlab'
 import { scopeStore } from './scope-store'
 
@@ -43,8 +44,25 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
       if (typeof name !== 'string') return rpcError(id, -32602, 'name is required')
       const args = (body.params?.arguments ?? {}) as Record<string, unknown>
       const scope = await scopeStore.getScope()
+      const readProvider = reader()
+      const writeProvider = writer()
+      // Keep provider instances intact: GitLab providers hold private state and
+      // rely on prototype methods, so spreading/assigning them would silently
+      // drop methods and lose the correct `this` binding.
+      const provider = new Proxy(
+        readProvider as ProviderReadContract & Partial<ProviderWriteContract>,
+        {
+          get(target, property, receiver) {
+            if (property in writeProvider) {
+              const value = Reflect.get(writeProvider, property, writeProvider)
+              return typeof value === 'function' ? value.bind(writeProvider) : value
+            }
+            return Reflect.get(target, property, receiver)
+          },
+        },
+      )
       const context: ReadContext & WriteContext = {
-        provider: Object.assign({}, reader(), writer()),
+        provider,
         scope,
       }
       const result = readTools().some((tool) => tool.name === name)
@@ -66,8 +84,18 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
   }
 }
 const headers = { 'content-type': 'application/json' }
+const jsonSafe = (value: unknown): unknown => {
+  if (value instanceof Map)
+    return Object.fromEntries(
+      [...value.entries()].map(([key, entry]) => [String(key), jsonSafe(entry)]),
+    )
+  if (Array.isArray(value)) return value.map(jsonSafe)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, jsonSafe(entry)]))
+  return value
+}
 const rpcResult = (id: Rpc['id'], result: unknown) =>
-  new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), { headers })
+  new Response(JSON.stringify({ jsonrpc: '2.0', id, result: jsonSafe(result) }), { headers })
 const rpcError = (id: Rpc['id'], code: number, message: string) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }), {
     status: 400,
