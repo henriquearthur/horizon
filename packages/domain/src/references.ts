@@ -3,9 +3,19 @@ import { isProjectSelected, type ScopeSelection } from './scope.ts'
 import type { ProviderProject } from './provider.ts'
 
 export type IssueReference =
-  | { readonly kind: 'resolved'; readonly issue: ProviderIssue; readonly project: ProviderProject; readonly technical: string; readonly friendly: string }
+  | {
+      readonly kind: 'resolved'
+      readonly issue: ProviderIssue
+      readonly project: ProviderProject
+      readonly technical: string
+      readonly friendly: string
+    }
   | { readonly kind: 'not-found'; readonly reference: string }
-  | { readonly kind: 'conflict'; readonly reference: string; readonly candidates: readonly string[] }
+  | {
+      readonly kind: 'conflict'
+      readonly reference: string
+      readonly candidates: readonly string[]
+    }
 
 export const friendlyIssueId = (project: Pick<ProviderProject, 'path'>, iid: number): string => {
   const parts = project.path.split(/[-_]/).filter(Boolean)
@@ -13,7 +23,8 @@ export const friendlyIssueId = (project: Pick<ProviderProject, 'path'>, iid: num
   return `${prefix.toUpperCase()}-${iid}`
 }
 
-const technical = (project: ProviderProject, iid: number) => `${project.namespace}/${project.path}#${iid}`
+const technical = (project: ProviderProject, iid: number) =>
+  `${project.namespace}/${project.path}#${iid}`
 
 export const resolveIssueReference = (
   reference: string,
@@ -29,14 +40,29 @@ export const resolveIssueReference = (
   if (!Number.isInteger(iid) || iid <= 0) return { kind: 'not-found', reference }
   const candidates = selected.filter((project) => {
     const fullPath = `${project.namespace}/${project.path}`
-    return hash >= 0 ? fullPath === path : friendlyIssueId(project, iid).toLowerCase() === input.toLowerCase()
+    return hash >= 0
+      ? fullPath === path
+      : friendlyIssueId(project, iid).toLowerCase() === input.toLowerCase()
   })
-  const matches = candidates.filter((project) => issues.some((issue) => issue.projectId === project.id && issue.iid === iid))
+  const matches = candidates.filter((project) =>
+    issues.some((issue) => issue.projectId === project.id && issue.iid === iid),
+  )
   if (matches.length === 0) return { kind: 'not-found', reference }
-  if (matches.length > 1) return { kind: 'conflict', reference, candidates: matches.map((p) => `${p.namespace}/${p.path}`).sort() }
+  if (matches.length > 1)
+    return {
+      kind: 'conflict',
+      reference,
+      candidates: matches.map((p) => `${p.namespace}/${p.path}`).sort(),
+    }
   const project = matches[0]!
   const issue = issues.find((item) => item.projectId === project.id && item.iid === iid)!
-  return { kind: 'resolved', issue, project, technical: technical(project, iid), friendly: friendlyIssueId(project, iid) }
+  return {
+    kind: 'resolved',
+    issue,
+    project,
+    technical: technical(project, iid),
+    friendly: friendlyIssueId(project, iid),
+  }
 }
 
 export const resolveIssueReferenceFromProvider = async (
