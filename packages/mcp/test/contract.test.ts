@@ -51,7 +51,11 @@ function fakeProvider() {
 describe('MCP contract with fake provider', () => {
   it('covers scope, collections, metadata, hierarchy and views', async () => {
     const provider = fakeProvider()
-    const ctx = { provider, scope, views: async () => [{ id: 'general', title: 'General', builtin: true }] }
+    const ctx = {
+      provider,
+      scope,
+      views: async () => [{ id: 'general', title: 'General', builtin: true }],
+    }
     expect(((await callReadTool(ctx, 'read_scope')) as any).projects).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_groups')).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_projects')).toHaveLength(1)
@@ -67,7 +71,11 @@ describe('MCP contract with fake provider', () => {
 
   it('covers mutations, lifecycle, references and validation errors', async () => {
     const provider = fakeProvider()
-    const ctx = { provider, scope, views: async () => [{ id: 'general', title: 'General', builtin: true }] }
+    const ctx = {
+      provider,
+      scope,
+      views: async () => [{ id: 'general', title: 'General', builtin: true }],
+    }
     await callWriteTool(ctx, 'create_issue', { projectId: 1, title: 'New' })
     await callWriteTool(ctx, 'create_comment', {
       reference: 'team/alpha#3',
@@ -95,5 +103,27 @@ describe('MCP contract with fake provider', () => {
       McpToolError,
     )
     await expect(callReadTool(ctx, 'unknown')).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('preserves applied status when assignment fails after the transition', async () => {
+    const provider = fakeProvider()
+    provider.updateIssue.mockRejectedValueOnce(new Error('assignment unavailable'))
+    const ctx = { provider, scope }
+
+    await expect(
+      callWriteTool(ctx, 'start_issue', {
+        reference: 'team/alpha#3',
+        model: 'm',
+        harness: 'h',
+        session_id: 's',
+        assigneeIds: [42],
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_error',
+      details: {
+        effects: { status: 'applied', assignment: 'failed' },
+      },
+    })
+    expect(provider.updateIssueProperties).toHaveBeenCalledOnce()
   })
 })

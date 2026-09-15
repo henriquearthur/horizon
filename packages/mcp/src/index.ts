@@ -32,6 +32,7 @@ export type McpTool = {
   description: string
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
 }
+type ToolSpec = readonly [name: string, description: string, properties: Record<string, object>]
 export type McpView = Readonly<Record<string, unknown>>
 export type ReadContext = {
   provider: ProviderReadContract
@@ -43,7 +44,7 @@ export type WriteContext = ReadContext & {
   provider: ProviderReadContract & ProviderWriteContract
 }
 
-const tools: McpTool[] = [
+const toolSpecs: readonly ToolSpec[] = [
   ['read_scope', 'Read the configured scope', {}],
   ['list_groups', 'List groups in the configured scope', {}],
   ['list_projects', 'List projects in the configured scope', {}],
@@ -141,15 +142,16 @@ const tools: McpTool[] = [
       assigneeIds: { type: 'array' },
     },
   ],
-].map(([name, description, properties]) => ({
-  name: name as string,
-  description: description as string,
+]
+const tools: McpTool[] = toolSpecs.map(([name, description, properties]) => ({
+  name,
+  description,
   inputSchema: {
     type: 'object',
-    properties: properties as Record<string, unknown>,
-    ...(Object.keys(properties as object).length
+    properties,
+    ...(Object.keys(properties).length
       ? {
-          required: Object.keys(properties as object).filter((k) =>
+          required: Object.keys(properties).filter((k) =>
             [
               'reference',
               'title',
@@ -409,16 +411,24 @@ export async function callWriteTool(
           })
           effects.status = 'applied'
           if (assigneeIds) {
-            await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
-            effects.assignment = 'applied'
+            try {
+              await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
+              effects.assignment = 'applied'
+            } catch (e) {
+              effects.assignment = 'failed'
+              throw new McpToolError('provider_error', 'Lifecycle assignment update failed', {
+                effects,
+                error: e instanceof Error ? e.message : e,
+              })
+            }
           }
         } else if (assigneeIds) {
           await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
           effects.assignment = 'applied'
         }
       } catch (e) {
-        effects.status = 'failed'
-        effects.assignment = 'failed'
+        if (effects.status !== 'applied') effects.status = 'failed'
+        if (effects.assignment === 'unknown') effects.assignment = 'failed'
         throw new McpToolError('provider_error', 'Lifecycle status update failed', {
           effects,
           error: e instanceof Error ? e.message : e,
