@@ -38,7 +38,6 @@ function fakeProvider() {
     })),
     readHierarchy: vi.fn(async () => new Map()),
     listComments: vi.fn(async () => comments),
-    listViews: vi.fn(async () => [{ id: 'general', title: 'General', builtin: true }]),
     createComment: vi.fn(async (_p: number, _i: number, body: string) => {
       comments.push({ body })
       return comments.at(-1)
@@ -52,7 +51,7 @@ function fakeProvider() {
 describe('MCP contract with fake provider', () => {
   it('covers scope, collections, metadata, hierarchy and views', async () => {
     const provider = fakeProvider()
-    const ctx = { provider, scope }
+    const ctx = { provider, scope, views: async () => [{ id: 'general', title: 'General', builtin: true }] }
     expect(((await callReadTool(ctx, 'read_scope')) as any).projects).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_groups')).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_projects')).toHaveLength(1)
@@ -68,7 +67,7 @@ describe('MCP contract with fake provider', () => {
 
   it('covers mutations, lifecycle, references and validation errors', async () => {
     const provider = fakeProvider()
-    const ctx = { provider, scope }
+    const ctx = { provider, scope, views: async () => [{ id: 'general', title: 'General', builtin: true }] }
     await callWriteTool(ctx, 'create_issue', { projectId: 1, title: 'New' })
     await callWriteTool(ctx, 'create_comment', {
       reference: 'team/alpha#3',
