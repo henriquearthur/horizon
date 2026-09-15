@@ -27,9 +27,9 @@ export type McpTool = {
   description: string
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
 }
-export type ReadContext = { provider: ProviderReadContract; scope: ScopeSelection }
+export type ReadContext = { provider: ProviderReadContract; scope: ScopeSelection; views?: readonly unknown[] | (() => Promise<readonly unknown[]>); comments?: (projectId: number, iid: number) => Promise<readonly unknown[]> }
 export type WriteContext = ReadContext & {
-  provider: ProviderReadContract & Partial<ProviderWriteContract>
+  provider: ProviderReadContract & ProviderWriteContract
 }
 
 const tools: McpTool[] = [
@@ -217,11 +217,11 @@ export async function callReadTool(
       case 'get_issue':
         return issue(ctx, args.reference)
       case 'get_comments': {
-        const i: any = await issue(ctx, args.reference)
-        const fn = (ctx.provider as any).listComments
-        if (typeof fn !== 'function')
-          throw new McpToolError('provider_error', 'Provider não implementa listComments')
-        return { issue: i, comments: await fn.call(ctx.provider, i.projectId, i.iid) }
+        const i = await issue(ctx, args.reference)
+        if (ctx.comments) return { issue: i, comments: await ctx.comments(i.projectId, i.iid) }
+        const provider = ctx.provider as ProviderReadContract & Pick<ProviderWriteContract, 'listComments'>
+        if (typeof provider.listComments !== 'function') throw new McpToolError('provider_error', 'Comments dependency is not configured')
+        return { issue: i, comments: await provider.listComments(i.projectId, i.iid) }
       }
       case 'get_metadata': {
         const i: any = await issue(ctx, args.reference)
@@ -243,10 +243,9 @@ export async function callReadTool(
         }
       }
       case 'list_views': {
-        const fn = (ctx.provider as any).listViews
-        if (typeof fn !== 'function')
-          throw new McpToolError('provider_error', 'Provider não implementa listViews')
-        return await fn.call(ctx.provider)
+        if (typeof ctx.views === 'function') return await ctx.views()
+        if (Array.isArray(ctx.views)) return ctx.views
+        throw new McpToolError('provider_error', 'Views dependency is not configured')
       }
       default:
         throw new McpToolError('not_found', `Unknown tool: ${name}`)
@@ -306,10 +305,16 @@ export async function callWriteTool(
     }
     if (name === 'set_issue_properties') {
       const i: any = await resolved(ctx, requireString('reference'))
-      const changes: any = {}
-      for (const k of ['status', 'priority']) if (typeof args[k] === 'string') changes[k] = args[k]
-      if (Array.isArray(args.labels)) changes.labels = args.labels
-      return await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, changes)
+      const changes: { status?: string; priority?: string } = {}
+      for (const k of ['status', 'priority'] as const) if (typeof args[k] === 'string') changes[k] = args[k] as string
+      let updated = await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, changes as never)
+      if (Array.isArray(args.labels) || Array.isArray(args.assigneeIds)) {
+        updated = await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, {
+          ...(Array.isArray(args.labels) ? { labels: args.labels as string[] } : {}),
+          ...(Array.isArray(args.assigneeIds) ? { assigneeIds: args.assigneeIds as number[] } : {}),
+        })
+      }
+      return updated
     }
     if (name === 'create_blocking') {
       const s: any = await resolved(ctx, requireString('source'))
@@ -321,10 +326,7 @@ export async function callWriteTool(
     if (name === 'create_sub_issue') {
       const parent = await resolved(ctx, requireString('parent'))
       const title = requireString('title')
-      const fn = (ctx.provider as any).createSubIssue
-      if (typeof fn !== 'function')
-        throw new McpToolError('provider_error', 'Provider não implementa createSubIssue')
-      return await fn.call(ctx.provider, (parent as any).projectId, (parent as any).iid, { title })
+      throw new McpToolError('provider_error', 'create_sub_issue is not supported by the provider', { parent: parent.reference, title })
     }
     if (['start_issue', 'handoff_issue', 'resume_issue', 'complete_issue'].includes(name)) {
       const i: any = await resolved(ctx, requireString('reference'))
