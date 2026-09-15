@@ -9,6 +9,7 @@ vi.mock('../src/server/gitlab', () => {
     listLabels: async () => ({ items: [] }),
     listIssues: async () => ({ items: [] }),
     searchDiscussions: async () => [],
+    listViews: async () => [{ id: 'general', title: 'General', builtin: true }],
   }
   return { reader: () => p, writer: () => ({}) }
 })
