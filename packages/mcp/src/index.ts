@@ -6,6 +6,11 @@ import {
   type ProviderReadContract,
   type ScopeSelection,
   type ProviderWriteContract,
+  type ProviderComment,
+  type ProviderLabel,
+  type ProviderIssue,
+  type IssueStatus,
+  type IssuePriority,
   withBlockingLink,
   readIssueProperties,
 } from '@horizon/domain'
@@ -27,7 +32,13 @@ export type McpTool = {
   description: string
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
 }
-export type ReadContext = { provider: ProviderReadContract; scope: ScopeSelection; views?: readonly unknown[] | (() => Promise<readonly unknown[]>); comments?: (projectId: number, iid: number) => Promise<readonly unknown[]> }
+export type McpView = Readonly<Record<string, unknown>>
+export type ReadContext = {
+  provider: ProviderReadContract
+  scope: ScopeSelection
+  views?: readonly McpView[] | (() => Promise<readonly McpView[]>)
+  comments?: (projectId: number, iid: number) => Promise<readonly ProviderComment[]>
+}
 export type WriteContext = ReadContext & {
   provider: ProviderReadContract & ProviderWriteContract
 }
@@ -219,12 +230,14 @@ export async function callReadTool(
       case 'get_comments': {
         const i = await issue(ctx, args.reference)
         if (ctx.comments) return { issue: i, comments: await ctx.comments(i.projectId, i.iid) }
-        const provider = ctx.provider as ProviderReadContract & Pick<ProviderWriteContract, 'listComments'>
-        if (typeof provider.listComments !== 'function') throw new McpToolError('provider_error', 'Comments dependency is not configured')
+        const provider = ctx.provider as ProviderReadContract &
+          Pick<ProviderWriteContract, 'listComments'>
+        if (typeof provider.listComments !== 'function')
+          throw new McpToolError('provider_error', 'Comments dependency is not configured')
         return { issue: i, comments: await provider.listComments(i.projectId, i.iid) }
       }
       case 'get_metadata': {
-        const i: any = await issue(ctx, args.reference)
+        const i = await issue(ctx, args.reference)
         return {
           users: await readAllPages((p) => ctx.provider.listUsers(i.projectId, p)),
           labels: await readAllPages((p) => ctx.provider.listLabels(i.projectId, p)),
@@ -256,11 +269,14 @@ export async function callReadTool(
   }
 }
 
-const writeProvider = (ctx: WriteContext, method: keyof ProviderWriteContract): any => {
+const writeProvider = <K extends keyof ProviderWriteContract>(
+  ctx: WriteContext,
+  method: K,
+): ProviderWriteContract[K] => {
   const fn = ctx.provider[method]
   if (typeof fn !== 'function')
     throw new McpToolError('provider_error', `Provider não implementa ${String(method)}`)
-  return fn.bind(ctx.provider)
+  return fn.bind(ctx.provider) as ProviderWriteContract[K]
 }
 const resolved = async (ctx: WriteContext, ref: unknown) => issue(ctx, ref)
 export async function callWriteTool(
@@ -279,13 +295,14 @@ export async function callWriteTool(
       if (!Number.isInteger(args.projectId) || typeof args.title !== 'string' || !args.title.trim())
         throw new McpToolError('validation_error', 'projectId and title are required')
       const d = await readScope(ctx)
-      if (!d.projects.some((p) => p.id === args.projectId))
+      const projectId = args.projectId as number
+      if (!d.projects.some((p) => p.id === projectId))
         throw new McpToolError('scope_error', 'Project outside configured scope')
       return await writeProvider(
         ctx,
         'createIssue',
       )({
-        projectId: args.projectId,
+        projectId,
         title: args.title,
         ...(typeof args.description === 'string' ? { description: args.description } : {}),
         ...(Array.isArray(args.labels) ? { labels: args.labels } : {}),
@@ -293,21 +310,22 @@ export async function callWriteTool(
       })
     }
     if (name === 'create_comment') {
-      const i: any = await resolved(ctx, requireString('reference'))
+      const i = await resolved(ctx, requireString('reference'))
       const body = requireString('body')
       for (const key of ['model', 'harness', 'session_id']) requireString(key)
       const citation = `> **Model:** \`${args.model}\` · **Harness:** \`${args.harness}\` · **Session:** \`${args.session_id}\``
       return await writeProvider(ctx, 'createComment')(i.projectId, i.iid, `${citation}\n\n${body}`)
     }
     if (name === 'update_issue') {
-      const i: any = await resolved(ctx, requireString('reference'))
+      const i = await resolved(ctx, requireString('reference'))
       return await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, args)
     }
     if (name === 'set_issue_properties') {
-      const i: any = await resolved(ctx, requireString('reference'))
-      const changes: { status?: string; priority?: string } = {}
-      for (const k of ['status', 'priority'] as const) if (typeof args[k] === 'string') changes[k] = args[k] as string
-      let updated = await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, changes as never)
+      const i = await resolved(ctx, requireString('reference'))
+      const changes: { status?: IssueStatus; priority?: IssuePriority } = {}
+      if (typeof args.status === 'string') changes.status = args.status as IssueStatus
+      if (typeof args.priority === 'string') changes.priority = args.priority as IssuePriority
+      let updated = await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, changes)
       if (Array.isArray(args.labels) || Array.isArray(args.assigneeIds)) {
         updated = await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, {
           ...(Array.isArray(args.labels) ? { labels: args.labels as string[] } : {}),
@@ -317,8 +335,8 @@ export async function callWriteTool(
       return updated
     }
     if (name === 'create_blocking') {
-      const s: any = await resolved(ctx, requireString('source'))
-      const t: any = await resolved(ctx, requireString('target'))
+      const s = await resolved(ctx, requireString('source'))
+      const t = await resolved(ctx, requireString('target'))
       return await writeProvider(ctx, 'updateIssue')(s.projectId, s.iid, {
         labels: withBlockingLink(s, t),
       })
@@ -326,34 +344,41 @@ export async function callWriteTool(
     if (name === 'create_sub_issue') {
       const parent = await resolved(ctx, requireString('parent'))
       const title = requireString('title')
-      throw new McpToolError('provider_error', 'create_sub_issue is not supported by the provider', { parent: parent.reference, title })
+      throw new McpToolError(
+        'provider_error',
+        'create_sub_issue is not supported by the provider',
+        { parent: parent.reference, title },
+      )
     }
     if (['start_issue', 'handoff_issue', 'resume_issue', 'complete_issue'].includes(name)) {
-      const i: any = await resolved(ctx, requireString('reference'))
+      const i = await resolved(ctx, requireString('reference'))
       for (const key of ['model', 'harness', 'session_id']) requireString(key)
-      const target = (
-        {
-          start_issue: 'in_progress',
-          handoff_issue: 'paused',
-          resume_issue: 'in_progress',
-          complete_issue: 'completed',
-        } as any
-      )[name]
+      const lifecycleTargets: Record<
+        'start_issue' | 'handoff_issue' | 'resume_issue' | 'complete_issue',
+        'in_progress' | 'paused' | 'completed'
+      > = {
+        start_issue: 'in_progress',
+        handoff_issue: 'paused',
+        resume_issue: 'in_progress',
+        complete_issue: 'completed',
+      }
+      const lifecycleName = name as keyof typeof lifecycleTargets
+      const target = lifecycleTargets[lifecycleName]
       const current = readIssueProperties(i).status
-      const statusMap: any = {
+      const statusMap: Record<string, 'backlog' | 'in_progress' | 'paused' | 'completed'> = {
         Backlog: 'backlog',
         'Em andamento': 'in_progress',
         Pausada: 'paused',
         Concluído: 'completed',
       }
       const currentKey = statusMap[current] ?? 'backlog'
-      const allowed: any = {
+      const allowed: Record<typeof lifecycleName, readonly string[]> = {
         start_issue: ['backlog', 'in_progress'],
         handoff_issue: ['in_progress', 'paused'],
         resume_issue: ['paused', 'in_progress'],
         complete_issue: ['backlog', 'in_progress', 'paused', 'completed'],
       }
-      if (!allowed[name].includes(currentKey))
+      if (!allowed[lifecycleName].includes(currentKey))
         throw new McpToolError('conflict', `Invalid lifecycle transition from ${currentKey}`, {
           currentStatus: currentKey,
           targetStatus: target,
@@ -371,23 +396,26 @@ export async function callWriteTool(
         status: 'applied' | 'failed' | 'unknown'
         comment: 'applied' | 'failed' | 'unknown'
         assignment: 'applied' | 'failed' | 'unknown'
-      } = { status: 'applied', comment: 'unknown', assignment: 'applied' }
+      } = { status: 'unknown', comment: 'unknown', assignment: assigneeIds ? 'unknown' : 'applied' }
+      const statusLabels: Record<typeof target, IssueStatus> = {
+        in_progress: 'Em andamento',
+        paused: 'Pausada',
+        completed: 'Concluído',
+      }
       try {
         if (currentKey !== target) {
           await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, {
-            status: (
-              {
-                backlog: 'Backlog',
-                in_progress: 'Em andamento',
-                paused: 'Pausada',
-                completed: 'Concluído',
-              } as any
-            )[target],
+            status: statusLabels[target],
           })
-          if (assigneeIds)
+          effects.status = 'applied'
+          if (assigneeIds) {
             await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
-        } else if (assigneeIds)
+            effects.assignment = 'applied'
+          }
+        } else if (assigneeIds) {
           await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
+          effects.assignment = 'applied'
+        }
       } catch (e) {
         effects.status = 'failed'
         effects.assignment = 'failed'
@@ -398,7 +426,7 @@ export async function callWriteTool(
       }
       try {
         const comments = await writeProvider(ctx, 'listComments')(i.projectId, i.iid)
-        if (!comments.some((c: any) => c.body === text))
+        if (!comments.some((c: ProviderComment) => c.body === text))
           await writeProvider(ctx, 'createComment')(i.projectId, i.iid, text)
         effects.comment = 'applied'
       } catch (e) {
