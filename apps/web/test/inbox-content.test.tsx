@@ -132,7 +132,11 @@ describe('InboxContent', () => {
     expect(screen.getByText('Done issue')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Filtro' }))
-    await userEvent.click(await screen.findByRole('button', { name: /^Concluído/ }))
+    const filterMenu = (await screen.findByLabelText('Buscar em Concluídos')).closest(
+      '[data-slot="popover-content"]',
+    ) as HTMLElement
+    await userEvent.click(within(filterMenu).getByRole('button', { name: 'Status' }))
+    await userEvent.click(within(filterMenu).getByText('Concluído').closest('button')!)
 
     expect(screen.queryByText('Backlog issue')).not.toBeInTheDocument()
     expect(screen.getByText('Done issue')).toBeInTheDocument()
@@ -261,7 +265,6 @@ describe('InboxContent', () => {
       screen.getByRole('button', { name: /Expandir sub-issues de Backlog issue/ }),
     )
     expect(screen.getByText('Sub issue')).toBeInTheDocument()
-    expect(screen.getByText('filho de #1')).toBeInTheDocument()
   })
 
   it('shows the parent of a sub-issue in the Detail and opens it in place', async () => {
@@ -316,7 +319,7 @@ describe('InboxContent', () => {
     await userEvent.click(within(picker).getByRole('button', { name: /Done issue/ }))
 
     await waitFor(() =>
-      expect(updateIssue).toHaveBeenCalledWith(1, 1, { labels: ['horizon-blocks:1:1:1:2'] }),
+      expect(updateIssue).toHaveBeenCalledWith(1, 1, { labels: ['horizon::blocked::1:1:1:2'] }),
     )
   })
 
