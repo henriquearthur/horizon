@@ -267,6 +267,36 @@ describe('InboxContent', () => {
     expect(screen.getByText('Sub issue')).toBeInTheDocument()
   })
 
+  it('allows the sub-issue progress to shrink inside a Kanban card', () => {
+    const children = Array.from({ length: 10 }, (_, index) => ({
+      ...snapshot.issues[0]!,
+      id: index + 3,
+      iid: index + 3,
+      title: `Sub issue ${index + 1}`,
+      parentIid: 1,
+      labels: [],
+    }))
+    render(
+      <InboxContent
+        snapshot={{
+          ...snapshot,
+          issues: [{ ...snapshot.issues[0]!, hasChildren: true }, ...children],
+        }}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="kanban"
+        query=""
+        provider={{} as never}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    const progress = screen.getByTitle('0 de 10 concluídos')
+    expect(progress).toHaveClass('min-w-0')
+    expect(progress).not.toHaveClass('shrink-0')
+    expect(screen.getByText('0 de 10 concluídos')).toHaveClass('truncate')
+  })
+
   it('shows the parent of a sub-issue in the Detail and opens it in place', async () => {
     const withChild = {
       ...snapshot,

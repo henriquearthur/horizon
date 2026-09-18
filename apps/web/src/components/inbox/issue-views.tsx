@@ -112,13 +112,16 @@ function IssueMeta({
       {childCount ? (
         <span
           title={`${doneChildren} de ${childCount} concluídos`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-1.5 py-px text-[10px] tabular-nums text-muted-foreground"
+          className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-muted px-1.5 py-px text-[10px] tabular-nums text-muted-foreground"
         >
-          <ListTree aria-hidden className="size-3" />
-          <span>
+          <ListTree aria-hidden className="size-3 flex-none" />
+          <span className="truncate">
             {doneChildren} de {childCount} concluídos
           </span>
-          <span className="h-1 w-10 overflow-hidden rounded-full bg-foreground/15" aria-hidden>
+          <span
+            className="h-1 w-10 flex-none overflow-hidden rounded-full bg-foreground/15"
+            aria-hidden
+          >
             <span
               className="block h-full rounded-full bg-primary"
               style={{ width: `${(doneChildren / childCount) * 100}%` }}
