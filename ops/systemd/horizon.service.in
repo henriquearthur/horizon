@@ -1,0 +1,21 @@
+[Unit]
+Description=Horizon production
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__HORIZON_ACTIVE__
+Environment=HOST=0.0.0.0
+Environment=PORT=7346
+Environment=HORIZON_DATA_FILE=__HORIZON_DATA_FILE__
+EnvironmentFile=__HORIZON_ENV_FILE__
+ExecStartPre=/usr/bin/sh -c 'printf "Starting Horizon commit "; cat __HORIZON_ACTIVE__/.horizon-commit'
+ExecStart=__NODE__ __HORIZON_ACTIVE__/server/index.mjs
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

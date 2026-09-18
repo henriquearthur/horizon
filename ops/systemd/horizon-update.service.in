@@ -1,0 +1,8 @@
+[Unit]
+Description=Update Horizon production from origin/main
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__HORIZON_PUBLISHER__
