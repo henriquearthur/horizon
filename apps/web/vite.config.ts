@@ -20,7 +20,7 @@ export default defineConfig({
     tailwindcss(),
     tanstackStart(),
     // Nitro turns the build into a standalone Node server for self-hosting.
-    nitro(),
+    nitro({ serverDir: './server' }),
     // react's vite plugin must come after start's vite plugin
     viteReact(),
   ],
