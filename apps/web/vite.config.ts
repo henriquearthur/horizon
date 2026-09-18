@@ -10,7 +10,7 @@ export default defineConfig({
     // machines. Vite rejects unknown Host headers by default, which blocks the
     // Tailscale name the README points at.
     host: '0.0.0.0',
-    port: 7346,
+    port: 3000,
     allowedHosts: true,
   },
   resolve: {

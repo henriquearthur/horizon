@@ -33,17 +33,17 @@ Run everything from the repository root. Requires Node >= 22.12 and pnpm.
 
 ```bash
 pnpm install
-pnpm dev          # dev server on 0.0.0.0:7346
+pnpm dev          # dev server on 0.0.0.0:3000 (or the next free port)
 pnpm build
-pnpm --filter @horizon/web start # production server on 0.0.0.0:7346
+pnpm --filter @horizon/web start # production server on 0.0.0.0:3000 by default
 pnpm typecheck
 pnpm test
 pnpm check        # format, typecheck, test and build
 ```
 
-Both development and production servers listen on `0.0.0.0:7346`. On the Nitro
-machine, Horizon is reachable at `http://nitro:7346` over Tailscale, and its MCP
-endpoint is `http://nitro:7346/mcp`.
+Both commands accept an externally configured `PORT`. Development starts at
+3000 and lets Vite choose the next free port when necessary. The Nitro service
+sets production to 7346; see [the operations guide](docs/operations/nitro.md).
 
 ## Docs
 

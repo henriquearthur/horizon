@@ -5,3 +5,5 @@ pnpm-lock.yaml
 dist
 coverage
 src/routeTree.gen.ts
+ops/systemd/*.service.in
+scripts/*.sh
