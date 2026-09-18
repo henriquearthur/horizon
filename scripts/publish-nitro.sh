@@ -72,6 +72,20 @@ fail_rejected() {
   exit 21
 }
 
+replace_symlink() {
+  local target=$1 link=$2 suffix=${3:-tmp} temporary
+  temporary="$(dirname -- "$link")/.$(basename -- "$link").$$.$suffix"
+  ln -s "$target" "$temporary"
+  mv -Tf -- "$temporary" "$link"
+}
+
+dependency_failure_is_commit_error() {
+  local output=$1
+  grep -Eq \
+    'ERR_PNPM_(OUTDATED_LOCKFILE|BROKEN_LOCKFILE|LOCKFILE_MISSING_DEPENDENCY|NO_LOCKFILE|NO_IMPORTER_MANIFEST_FOUND|INVALID_WORKSPACE_CONFIGURATION|JSON_PARSE|UNSUPPORTED_ENGINE|BAD_PM_VERSION|MISMATCHED_RELEASE_CHANNEL|PEER_DEP_ISSUES)|(^|[[:space:]])ELIFECYCLE([[:space:]]|$)' \
+    "$output"
+}
+
 service_action() {
   local action=$1
   if [[ -n $service_program ]]; then
@@ -135,10 +149,21 @@ else
 fi
 
 if [[ $candidate == "$active_commit" ]]; then
-  clear_transient_state
-  log "commit $candidate is already active"
-  result no-change
-  exit 0
+  if healthy; then
+    clear_transient_state
+    log "commit $candidate is already active and healthy"
+    result no-change
+    exit 0
+  fi
+
+  log "commit $candidate is active but not answering; restarting it"
+  if service_action restart && healthy; then
+    clear_transient_state
+    log "commit $candidate recovered without a new publication"
+    result no-change
+    exit 0
+  fi
+  fail_rejected "active commit $candidate did not recover after restart"
 fi
 
 rejected_commit=
@@ -167,10 +192,19 @@ if [[ -n $build_program ]]; then
     fail_rejected "build failed for commit $candidate; active version was preserved"
   fi
 else
-  if ! pnpm --dir "$source_dir" install --frozen-lockfile; then
+  dependency_output="$state_dir/.dependency-install.$$.log"
+  if ! pnpm --dir "$source_dir" install --frozen-lockfile \
+    2>&1 | tee "$dependency_output"; then
+    if dependency_failure_is_commit_error "$dependency_output"; then
+      rm -f -- "$dependency_output"
+      rm -rf -- "$candidate_staging"
+      fail_rejected "dependency installation rejected commit $candidate; active version was preserved"
+    fi
+    rm -f -- "$dependency_output"
     rm -rf -- "$candidate_staging"
-    fail_transient "dependency installation failed for commit $candidate; active version was preserved"
+    fail_transient "dependency retrieval failed for commit $candidate; active version was preserved"
   fi
+  rm -f -- "$dependency_output"
   if ! pnpm --dir "$source_dir" --filter @horizon/web build ||
     ! cp -a "$source_dir/apps/web/.output/." "$candidate_staging/"; then
     rm -rf -- "$candidate_staging"
@@ -186,16 +220,12 @@ printf '%s\n' "$candidate" >"$candidate_staging/.horizon-commit"
 rm -rf -- "$candidate_release"
 mv -- "$candidate_staging" "$candidate_release"
 
-new_link="$state_dir/.active.$$.tmp"
-ln -s "$candidate_release" "$new_link"
-mv -Tf -- "$new_link" "$active_link"
+replace_symlink "$candidate_release" "$active_link"
 
 log "activating commit $candidate"
 if service_action restart && healthy; then
   if [[ -n $old_release && $old_release != "$candidate_release" ]]; then
-    previous_tmp="$state_dir/.previous.$$.tmp"
-    ln -s "$old_release" "$previous_tmp"
-    mv -Tf -- "$previous_tmp" "$previous_link"
+    replace_symlink "$old_release" "$previous_link"
   fi
 
   keep_previous=
@@ -216,9 +246,7 @@ fi
 
 log "commit $candidate failed its startup health check"
 if [[ -n $old_release && -d $old_release ]]; then
-  rollback_link="$state_dir/.active.$$.rollback"
-  ln -s "$old_release" "$rollback_link"
-  mv -Tf -- "$rollback_link" "$active_link"
+  replace_symlink "$old_release" "$active_link" rollback
   log "recovering previous commit $active_commit"
   if service_action restart && healthy; then
     rm -rf -- "$candidate_release"
