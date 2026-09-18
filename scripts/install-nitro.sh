@@ -12,12 +12,14 @@ existing_env=${HORIZON_EXISTING_ENV_FILE:-"$HOME/Workspace/apps/horizon/.env.loc
 unit_dir=${HORIZON_UNIT_DIR:-"$HOME/.config/systemd/user"}
 unit_file="$unit_dir/horizon.service"
 temporary_unit="$unit_dir/horizon-install.service"
+active_link="$state_dir/active"
+releases_dir="$state_dir/releases"
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
 unit_template="$repo_root/ops/systemd/horizon.service.in"
 
-for command in git node pnpm systemctl loginctl systemd-analyze; do
+for command in curl flock git node pnpm systemctl loginctl systemd-analyze; do
   command -v "$command" >/dev/null || {
     echo "Required command not found: $command" >&2
     exit 1
@@ -30,7 +32,7 @@ if [[ $linger != yes ]]; then
   exit 1
 fi
 
-install -d -m 0755 "$state_dir" "$(dirname -- "$data_file")" "$config_dir" "$unit_dir"
+install -d -m 0755 "$state_dir" "$releases_dir" "$(dirname -- "$data_file")" "$config_dir" "$unit_dir"
 
 if [[ ! -d $source_dir/.git ]]; then
   git clone --origin origin "$repository" "$source_dir"
@@ -38,10 +40,6 @@ elif [[ $(git -C "$source_dir" remote get-url origin) != "$repository" ]]; then
   echo "Dedicated clone has an unexpected origin: $source_dir" >&2
   exit 1
 fi
-
-git -C "$source_dir" fetch --prune origin
-git -C "$source_dir" checkout --detach "$ref"
-commit=$(git -C "$source_dir" rev-parse HEAD)
 
 if [[ ! -f $env_file ]]; then
   if [[ -f $existing_env ]]; then
@@ -55,20 +53,27 @@ else
   chmod 0600 "$env_file"
 fi
 
-pnpm --dir "$source_dir" install --frozen-lockfile
-pnpm --dir "$source_dir" --filter @horizon/web build
-output_dir="$source_dir/apps/web/.output"
-[[ -f $output_dir/server/index.mjs ]] || {
-  echo "Production build did not create $output_dir/server/index.mjs" >&2
-  exit 1
-}
-printf '%s\n' "$commit" >"$output_dir/.horizon-commit"
+legacy_output="$source_dir/apps/web/.output"
+if [[ ! -L $active_link && -f $legacy_output/server/index.mjs && -f $legacy_output/.horizon-commit ]]; then
+  legacy_commit=$(<"$legacy_output/.horizon-commit")
+  if [[ $legacy_commit =~ ^[0-9a-f]{40}$ ]]; then
+    legacy_release="$releases_dir/$legacy_commit"
+    if [[ ! -d $legacy_release ]]; then
+      legacy_staging="$releases_dir/.$legacy_commit.migration"
+      rm -rf -- "$legacy_staging"
+      mkdir -m 0755 "$legacy_staging"
+      cp -a "$legacy_output/." "$legacy_staging/"
+      mv -- "$legacy_staging" "$legacy_release"
+    fi
+    ln -s "$legacy_release" "$active_link"
+    echo "Preserved the existing production commit $legacy_commit for recovery"
+  fi
+fi
 
 node_path=$(command -v node)
 escape_sed() { printf '%s' "$1" | sed 's/[&|]/\\&/g'; }
 sed \
-  -e "s|__HORIZON_COMMIT__|$(escape_sed "$commit")|g" \
-  -e "s|__HORIZON_OUTPUT__|$(escape_sed "$output_dir")|g" \
+  -e "s|__HORIZON_ACTIVE__|$(escape_sed "$active_link")|g" \
   -e "s|__HORIZON_DATA_FILE__|$(escape_sed "$data_file")|g" \
   -e "s|__HORIZON_ENV_FILE__|$(escape_sed "$env_file")|g" \
   -e "s|__NODE__|$(escape_sed "$node_path")|g" \
@@ -78,8 +83,10 @@ systemd-analyze --user verify "$temporary_unit"
 mv "$temporary_unit" "$unit_file"
 
 systemctl --user daemon-reload
-systemctl --user enable --now horizon.service
+systemctl --user enable horizon.service
 
-echo "Horizon commit $commit is installed on http://nitro:7346"
+HORIZON_BRANCH=${ref#origin/} "$script_dir/publish-nitro.sh"
+
+echo "Horizon is installed on http://nitro:7346"
 echo "Scope data: $data_file"
 echo "Logs: journalctl --user-unit=horizon.service"
