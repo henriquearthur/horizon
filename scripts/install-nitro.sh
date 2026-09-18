@@ -12,12 +12,19 @@ existing_env=${HORIZON_EXISTING_ENV_FILE:-"$HOME/Workspace/apps/horizon/.env.loc
 unit_dir=${HORIZON_UNIT_DIR:-"$HOME/.config/systemd/user"}
 unit_file="$unit_dir/horizon.service"
 temporary_unit="$unit_dir/horizon-install.service"
+update_unit="$unit_dir/horizon-update.service"
+temporary_update_unit="$unit_dir/horizon-update-install.service"
+timer_unit="$unit_dir/horizon-update.timer"
+libexec_dir=${HORIZON_LIBEXEC_DIR:-"$HOME/.local/libexec/horizon"}
+installed_publisher="$libexec_dir/publish-nitro.sh"
 active_link="$state_dir/active"
 releases_dir="$state_dir/releases"
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
 unit_template="$repo_root/ops/systemd/horizon.service.in"
+update_unit_template="$repo_root/ops/systemd/horizon-update.service.in"
+timer_template="$repo_root/ops/systemd/horizon-update.timer"
 
 for command in curl flock git node pnpm systemctl loginctl systemd-analyze; do
   command -v "$command" >/dev/null || {
@@ -32,7 +39,7 @@ if [[ $linger != yes ]]; then
   exit 1
 fi
 
-install -d -m 0755 "$state_dir" "$releases_dir" "$(dirname -- "$data_file")" "$config_dir" "$unit_dir"
+install -d -m 0755 "$state_dir" "$releases_dir" "$(dirname -- "$data_file")" "$config_dir" "$unit_dir" "$libexec_dir"
 
 if [[ ! -d $source_dir/.git ]]; then
   git clone --origin origin "$repository" "$source_dir"
@@ -82,10 +89,27 @@ chmod 0644 "$temporary_unit"
 systemd-analyze --user verify "$temporary_unit"
 mv "$temporary_unit" "$unit_file"
 
+install -m 0755 "$script_dir/publish-nitro.sh" "$installed_publisher"
+sed -e "s|__HORIZON_PUBLISHER__|$(escape_sed "$installed_publisher")|g" \
+  "$update_unit_template" >"$temporary_update_unit"
+chmod 0644 "$temporary_update_unit"
+install -m 0644 "$timer_template" "$timer_unit"
+systemd-analyze --user verify "$temporary_update_unit" "$timer_unit"
+mv "$temporary_update_unit" "$update_unit"
+
 systemctl --user daemon-reload
 systemctl --user enable horizon.service
 
+set +e
 HORIZON_BRANCH=${ref#origin/} "$script_dir/publish-nitro.sh"
+publish_status=$?
+set -e
+systemctl --user enable --now horizon-update.timer
+
+if ((publish_status != 0)); then
+  echo "Initial publication did not succeed (status $publish_status); the timer remains enabled for recovery" >&2
+  exit "$publish_status"
+fi
 
 echo "Horizon is installed on http://nitro:7346"
 echo "Scope data: $data_file"

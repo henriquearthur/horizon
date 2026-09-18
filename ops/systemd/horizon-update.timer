@@ -1,0 +1,12 @@
+[Unit]
+Description=Check origin/main for Horizon updates every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Persistent=true
+AccuracySec=15s
+Unit=horizon-update.service
+
+[Install]
+WantedBy=timers.target
