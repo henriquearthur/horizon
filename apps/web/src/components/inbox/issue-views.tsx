@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import {
   STATUS_VALUES,
   readIssueProperties,
@@ -130,7 +130,7 @@ function IssueMeta({
   )
 }
 
-function IssueRow({
+const IssueRow = memo(function IssueRow({
   issue,
   path,
   code,
@@ -148,15 +148,15 @@ function IssueRow({
   path: string
   code: string
   selected: boolean
-  onOpen: () => void
+  onOpen: (issue: ProviderIssue) => void
   /** An open Bloqueio still holds this Issue back. */
   blocked?: boolean
   childCount?: number
   doneChildren?: number
   expanded?: boolean
-  onToggle?: () => void
+  onToggle?: (key: string) => void
   depth?: number
-  onStatusChange?: (status: IssueStatus) => void
+  onStatusChange?: ((issue: ProviderIssue, status: IssueStatus) => void) | undefined
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
@@ -170,7 +170,7 @@ function IssueRow({
       {childCount ? (
         <button
           type="button"
-          onClick={onToggle}
+          onClick={() => onToggle?.(issueKey(issue))}
           aria-expanded={expanded}
           aria-label={`${expanded ? 'Recolher' : 'Expandir'} sub-issues de ${issue.title}`}
           className="mt-[9px] flex size-5 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
@@ -184,7 +184,7 @@ function IssueRow({
         <span aria-hidden className="size-5 flex-none" />
       )}
       <div
-        onClick={onOpen}
+        onClick={() => onOpen(issue)}
         aria-current={selected ? 'true' : undefined}
         className={cn(
           'group relative flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-xl py-2.5 pr-3 pl-2 text-left transition-colors duration-150',
@@ -200,7 +200,7 @@ function IssueRow({
             conflict={properties.conflicts.status}
             blocked={blocked}
             blockedTitle={`${properties.status} · bloqueada`}
-            onChange={onStatusChange}
+            onChange={(status) => onStatusChange(issue, status)}
             className="-ml-1"
           />
         ) : (
@@ -219,7 +219,7 @@ function IssueRow({
               type="button"
               onClick={(event) => {
                 event.stopPropagation()
-                onOpen()
+                onOpen(issue)
               }}
               className="min-w-0 flex-1 truncate text-left text-[13.5px] leading-snug font-medium text-foreground"
             >
@@ -246,9 +246,9 @@ function IssueRow({
       </div>
     </div>
   )
-}
+})
 
-function IssueCard({
+const IssueCard = memo(function IssueCard({
   issue,
   path,
   code,
@@ -272,18 +272,18 @@ function IssueCard({
   code: string
   selected: boolean
   dragging: boolean
-  onOpen: () => void
-  onDragStart: () => void
+  onOpen: (issue: ProviderIssue) => void
+  onDragStart: (id: number) => void
   onDragEnd: () => void
   draggable: boolean
   childCount?: number
   doneChildren?: number
   blocked?: boolean
   expanded?: boolean
-  onToggle?: () => void
+  onToggle?: (key: string) => void
   collapsed?: boolean
-  onCollapse?: () => void
-  onStatusChange?: (status: IssueStatus) => void
+  onCollapse?: (key: string) => void
+  onStatusChange?: ((issue: ProviderIssue, status: IssueStatus) => void) | undefined
 }) {
   const properties = readIssueProperties(issue)
   const labels = visibleLabels(issue.labels)
@@ -295,10 +295,10 @@ function IssueCard({
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'move'
         event.dataTransfer.setData('text/plain', String(issue.id))
-        onDragStart()
+        onDragStart(issue.id)
       }}
       onDragEnd={onDragEnd}
-      onClick={onOpen}
+      onClick={() => onOpen(issue)}
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'flex w-full cursor-pointer flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-left shadow-xs transition-all duration-200',
@@ -315,7 +315,7 @@ function IssueCard({
             conflict={properties.conflicts.status}
             blocked={blocked}
             blockedTitle={`${properties.status} · bloqueada`}
-            onChange={onStatusChange}
+            onChange={(status) => onStatusChange(issue, status)}
             className="-m-1 size-5"
           />
         ) : (
@@ -337,7 +337,7 @@ function IssueCard({
             title={collapsed ? 'Mostrar subissues' : 'Recolher subissues'}
             onClick={(event) => {
               event.stopPropagation()
-              onCollapse?.()
+              onCollapse?.(issueKey(issue))
             }}
             className="flex size-5 flex-none items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
@@ -354,7 +354,7 @@ function IssueCard({
           type="button"
           onClick={(event) => {
             event.stopPropagation()
-            onOpen()
+            onOpen(issue)
           }}
           className="min-w-0 flex-1 text-left text-[12.5px] leading-[1.4] font-medium text-pretty text-foreground"
         >
@@ -379,12 +379,12 @@ function IssueCard({
       </div>
     </div>
   )
-}
+})
 
 const doneCount = (issues: readonly ProviderIssue[]): number =>
   issues.filter((issue) => readIssueProperties(issue).status === 'Concluído').length
 
-export function IssueViews({
+export const IssueViews = memo(function IssueViews({
   mode,
   issues,
   projects,
@@ -399,24 +399,37 @@ export function IssueViews({
   const [dragOver, setDragOver] = useState<string>()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [collapsedParents, setCollapsedParents] = useState<ReadonlySet<string>>(new Set())
-  const projectById = new Map(projects.map((project) => [project.id, project]))
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  )
   const pathFor = (issue: ProviderIssue) =>
     projectPath(projectById.get(issue.projectId), issue.projectId)
   const codeFor = (issue: ProviderIssue) => issueCode(issue, projectById.get(issue.projectId))
   const childrenFor = (issue: ProviderIssue) => childrenOf?.get(issueKey(issue)) ?? []
   const isBlocked = (issue: ProviderIssue) => blockedKeys?.has(issueKey(issue)) ?? false
-  const toggle = (key: string) =>
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
-  const toggleCollapsed = (key: string) =>
-    setCollapsedParents((current) => {
-      const next = new Set(current)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
+  const toggle = useCallback(
+    (key: string) =>
+      setExpanded((current) => {
+        const next = new Set(current)
+        if (!next.delete(key)) next.add(key)
+        return next
+      }),
+    [],
+  )
+  const toggleCollapsed = useCallback(
+    (key: string) =>
+      setCollapsedParents((current) => {
+        const next = new Set(current)
+        if (!next.delete(key)) next.add(key)
+        return next
+      }),
+    [],
+  )
+  const endDrag = useCallback(() => {
+    setDragging(undefined)
+    setDragOver(undefined)
+  }, [])
 
   if (mode === 'kanban') {
     const canDrag = Boolean(onStatusChange)
@@ -424,7 +437,9 @@ export function IssueViews({
     // never mixes work from repositories that have nothing to do with each other.
     const lanes = [
       ...issues.reduce((map, issue) => {
-        map.set(issue.projectId, [...(map.get(issue.projectId) ?? []), issue])
+        const lane = map.get(issue.projectId)
+        if (lane) lane.push(issue)
+        else map.set(issue.projectId, [issue])
         return map
       }, new Map<number, ProviderIssue[]>()),
     ].sort((left, right) =>
@@ -448,13 +463,9 @@ export function IssueViews({
             </header>
             <div className="flex items-start gap-4">
               {STATUS_VALUES.map((status) => {
-                const cards = laneIssues
-                  .filter((issue) => readIssueProperties(issue).status === status)
-                  .sort(
-                    (a, b) =>
-                      Number(readIssueProperties(a).status === 'Concluído') -
-                      Number(readIssueProperties(b).status === 'Concluído'),
-                  )
+                const cards = laneIssues.filter(
+                  (issue) => readIssueProperties(issue).status === status,
+                )
                 const dropKey = `${projectId}:${status}`
                 const over = dragOver === dropKey
                 return (
@@ -494,7 +505,13 @@ export function IssueViews({
                       </span>
                     </header>
                     {cards.map((issue) => (
-                      <div key={issue.id}>
+                      <div
+                        key={issue.id}
+                        style={{
+                          contentVisibility: 'auto',
+                          containIntrinsicSize: mode === 'kanban' ? 'auto 140px' : 'auto 65px',
+                        }}
+                      >
                         <IssueCard
                           issue={issue}
                           path={pathFor(issue)}
@@ -506,21 +523,19 @@ export function IssueViews({
                           doneChildren={doneCount(childrenFor(issue))}
                           blocked={isBlocked(issue)}
                           collapsed={collapsedParents.has(issueKey(issue))}
-                          onCollapse={() => toggleCollapsed(issueKey(issue))}
+                          onCollapse={toggleCollapsed}
                           expanded={expanded.has(issueKey(issue))}
-                          onToggle={() => toggle(issueKey(issue))}
-                          onOpen={() => onOpen(issue)}
-                          onDragStart={() => setDragging(issue.id)}
-                          onDragEnd={() => {
-                            setDragging(undefined)
-                            setDragOver(undefined)
-                          }}
-                          onStatusChange={(status) => onStatusChange?.(issue, status)}
+                          onToggle={toggle}
+                          onOpen={onOpen}
+                          onDragStart={setDragging}
+                          onDragEnd={endDrag}
+                          onStatusChange={onStatusChange}
                         />
                         {childrenFor(issue).length && !collapsedParents.has(issueKey(issue)) ? (
                           <div className="ml-3 space-y-2.5 border-l-2 border-muted-foreground/20 pt-3 pl-3">
                             {childrenFor(issue).map((child) => (
                               <IssueCard
+                                key={child.id}
                                 issue={child}
                                 path={pathFor(child)}
                                 code={codeFor(child)}
@@ -528,13 +543,10 @@ export function IssueViews({
                                 dragging={dragging === child.id}
                                 draggable={canDrag}
                                 blocked={isBlocked(child)}
-                                onOpen={() => onOpen(child)}
-                                onDragStart={() => setDragging(child.id)}
-                                onDragEnd={() => {
-                                  setDragging(undefined)
-                                  setDragOver(undefined)
-                                }}
-                                onStatusChange={(nextStatus) => onStatusChange?.(child, nextStatus)}
+                                onOpen={onOpen}
+                                onDragStart={setDragging}
+                                onDragEnd={endDrag}
+                                onStatusChange={onStatusChange}
                               />
                             ))}
                           </div>
@@ -580,20 +592,20 @@ export function IssueViews({
     const key = issueKey(issue)
     const open = expanded.has(key)
     return (
-      <div key={issue.id}>
+      <div key={issue.id} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 65px' }}>
         <IssueRow
           issue={issue}
           path={pathFor(issue)}
           code={codeFor(issue)}
           selected={issue.id === selectedId}
-          onOpen={() => onOpen(issue)}
+          onOpen={onOpen}
           blocked={isBlocked(issue)}
           childCount={children.length}
           doneChildren={doneCount(children)}
           expanded={open}
-          onToggle={() => toggle(key)}
+          onToggle={toggle}
           depth={depth}
-          onStatusChange={(status) => onStatusChange?.(issue, status)}
+          onStatusChange={onStatusChange}
         />
         {open ? children.map((child) => renderRow(child, depth + 1)) : null}
       </div>
@@ -624,4 +636,4 @@ export function IssueViews({
       })}
     </div>
   )
-}
+})

@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { ContentHeader } from '~/components/shell/content-header'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
@@ -13,7 +14,8 @@ import { getSetupStatus } from '~/server/setup-functions'
 import { useHorizonRuntime } from '~/runtime/runtime-provider'
 
 export const Route = createFileRoute('/')({
-  beforeLoad: async () => {
+  beforeLoad: async ({ cause }) => {
+    if (cause === 'stay') return
     // An empty Escopo is not a reason to leave the app: the Escopo modal opens
     // over the Inbox instead of a separate first-run page.
     const status = await getSetupStatus()
@@ -23,7 +25,9 @@ export const Route = createFileRoute('/')({
 })
 
 function IssuesPage() {
-  const { view, mode, query, issueRef } = resolveShellSearch(Route.useSearch())
+  const search = Route.useSearch()
+  const { mode, query, issueRef } = resolveShellSearch(search)
+  const view = useMemo(() => resolveShellSearch({ view: search.view }).view, [search.view])
   const runtime = useHorizonRuntime()
   const initiatives = useInitiatives(
     (runtime.snapshot?.issues ?? []).flatMap((issue) => initiativeIdsFromLabels(issue.labels)),
@@ -35,6 +39,13 @@ function IssuesPage() {
       : undefined,
   )
   const navigate = useNavigate({ from: '/' })
+
+  const selectIssue = useCallback(
+    (next: string | undefined) => {
+      void navigate({ search: (previous) => ({ ...previous, issue: next }), replace: true })
+    },
+    [navigate],
+  )
 
   return (
     <section className="flex min-w-0 flex-1 flex-col">
@@ -59,7 +70,7 @@ function IssuesPage() {
             ))}
           </div>
         </>
-      ) : runtime.error || !runtime.snapshot ? (
+      ) : !runtime.snapshot ? (
         <>
           <ContentToolbar>
             <Button size="xs" variant="outline" onClick={() => void runtime.refresh()}>
@@ -71,32 +82,34 @@ function IssuesPage() {
           </div>
         </>
       ) : (
-        <InboxContent
-          snapshot={runtime.snapshot}
-          view={view}
-          mode={mode}
-          query={query}
-          issueRef={issueRef}
-          provider={runtime.provider}
-          refresh={runtime.refresh}
-          refreshing={runtime.refreshing}
-          onSavedViewSelected={(selection) =>
-            navigate({
-              search: (previous) => ({
-                ...previous,
-                view: selection.view,
-                mode: selection.mode,
-                q: selection.query,
-              }),
-            })
-          }
-          onIssueSelected={(next) =>
-            navigate({
-              search: (previous) => ({ ...previous, issue: next }),
-              replace: true,
-            })
-          }
-        />
+        <>
+          {runtime.error ? (
+            <p role="alert" className="px-5 py-2 text-xs text-destructive">
+              {runtime.error}
+            </p>
+          ) : null}
+          <InboxContent
+            snapshot={runtime.snapshot}
+            view={view}
+            mode={mode}
+            query={query}
+            issueRef={issueRef}
+            provider={runtime.provider}
+            refresh={runtime.refresh}
+            refreshing={runtime.refreshing}
+            onSavedViewSelected={(selection) =>
+              navigate({
+                search: (previous) => ({
+                  ...previous,
+                  view: selection.view,
+                  mode: selection.mode,
+                  q: selection.query,
+                }),
+              })
+            }
+            onIssueSelected={selectIssue}
+          />
+        </>
       )}
     </section>
   )

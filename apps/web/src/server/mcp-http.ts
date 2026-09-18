@@ -7,7 +7,8 @@ import {
   type WriteContext,
 } from '../../../../packages/mcp/src/index.ts'
 import type { ProviderReadContract, ProviderWriteContract } from '@horizon/domain'
-import { reader, writer } from './gitlab'
+import { reader, providerSnapshot } from './gitlab'
+import { runtime } from './runtime'
 import { scopeStore } from './scope-store'
 
 const protocolVersion = '2026-07-28'
@@ -93,17 +94,23 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
       const args = (body.params?.arguments ?? {}) as Record<string, unknown>
       const scope = await scopeStore.getScope()
       const readProvider = reader()
-      const writeProvider = writer()
+      const writeProvider = runtime
       // GitLab providers hold private state and depend on their original `this` binding.
       const provider = new Proxy(
         readProvider as ProviderReadContract & Partial<ProviderWriteContract>,
         {
-          get(target, property, receiver) {
+          get(target, property) {
+            if (property === 'readScope')
+              return async () => {
+                const { groups, projects, issues } = await providerSnapshot()
+                return { groups, projects, issues }
+              }
             if (property in writeProvider) {
               const value = Reflect.get(writeProvider, property, writeProvider)
               return typeof value === 'function' ? value.bind(writeProvider) : value
             }
-            return Reflect.get(target, property, receiver)
+            const value = Reflect.get(target, property, target)
+            return typeof value === 'function' ? value.bind(target) : value
           },
         },
       ) as ProviderReadContract & ProviderWriteContract

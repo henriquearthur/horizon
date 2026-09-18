@@ -28,7 +28,6 @@ import {
   FolderKanban,
   GitMerge,
   ListTree,
-  LoaderCircle,
   MessageSquare,
   OctagonX,
   Pencil,
@@ -165,14 +164,17 @@ export function IssueDetailPanel({
       .catch(() => {
         if (active) setMergeRequests([])
       })
+    return () => {
+      active = false
+    }
+  }, [issue.projectId, issue.iid, provider])
+
+  useEffect(() => {
     setTitle(issue.title)
     setDescription(issue.description ?? '')
     setAssigneeIds(issue.assignees.map((user) => user.id))
     setLabels(issue.labels)
-    return () => {
-      active = false
-    }
-  }, [issue, provider])
+  }, [issue])
 
   const mutate = async (action: () => Promise<ProviderIssue>) => {
     setBusy(true)
@@ -237,14 +239,9 @@ export function IssueDetailPanel({
       />
       <aside
         aria-label="Detalhes do issue"
-        aria-busy={loading || busy}
+        aria-busy={busy}
         className="animate-panel-in fixed inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
       >
-        {(loading || busy) && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-l-2xl bg-card/45">
-            <LoaderCircle className="size-5 animate-spin text-primary" aria-label="Carregando" />
-          </div>
-        )}
         <header className="flex-none border-b px-5 pt-3.5 pb-4">
           <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
             <span className="font-semibold text-primary">#{issue.iid}</span>
@@ -568,7 +565,7 @@ export function IssueDetailPanel({
               <CollapsibleSection title="Comentários" count={discussion.length} className="mb-0">
                 <CommentList
                   comments={discussion}
-                  empty="Nenhum comentário ainda."
+                  empty={loading ? 'Carregando comentários…' : 'Nenhum comentário ainda.'}
                   issueHref={issueHref}
                   onIssueSelect={onIssueSelect}
                 />
@@ -578,7 +575,7 @@ export function IssueDetailPanel({
               <CollapsibleSection title="Histórico" count={activity.length} className="mb-0">
                 <CommentList
                   comments={activity}
-                  empty="Nenhuma atividade registrada."
+                  empty={loading ? 'Carregando atividade…' : 'Nenhuma atividade registrada.'}
                   activity
                   issueHref={issueHref}
                   onIssueSelect={onIssueSelect}

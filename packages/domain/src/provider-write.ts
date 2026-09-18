@@ -152,7 +152,7 @@ export class GitLabWriteProvider implements ProviderWriteContract {
     fetcher: typeof fetch = fetch,
     options: GitLabHttpOptions = {},
   ) {
-    this.#http = new GitLabHttp(connection, fetcher, options)
+    this.#http = new GitLabHttp(connection, fetcher, { priority: 'interactive', ...options })
   }
 
   async #request(path: string, init?: RequestInit): Promise<unknown> {

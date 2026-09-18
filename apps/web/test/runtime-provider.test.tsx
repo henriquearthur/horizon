@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { act } from '@testing-library/react'
+import { updateRuntimeIssueProperties } from '~/server/runtime-functions'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -8,6 +10,10 @@ import {
   useHorizonRuntime,
 } from '~/runtime/runtime-provider'
 import type { RuntimeSnapshot } from '~/server/runtime'
+
+vi.mock('~/server/runtime-functions', () => ({
+  updateRuntimeIssueProperties: vi.fn(),
+}))
 
 const snapshot = (title: string): RuntimeSnapshot => ({
   connection: {
@@ -143,4 +149,145 @@ describe('HorizonRuntimeProvider', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Atualizar estritamente' }))
     expect(await screen.findByText('Falha propagada')).toBeInTheDocument()
   })
+})
+
+it('updates status before GitLab responds and rolls back a rejected write', async () => {
+  let reject!: (error: Error) => void
+  vi.mocked(updateRuntimeIssueProperties).mockImplementation(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail
+      }),
+  )
+  function StatusConsumer() {
+    const { snapshot, provider } = useHorizonRuntime()
+    return (
+      <>
+        <span>{snapshot?.issues[0]?.state}</span>
+        <button
+          onClick={() => {
+            void provider.updateIssueProperties(10, 7, { status: 'Concluído' }).catch(() => {})
+          }}
+        >
+          Fechar
+        </button>
+      </>
+    )
+  }
+  render(
+    <HorizonRuntimeProvider loadSnapshot={async () => snapshot('Antes')} pollingIntervalMs={0}>
+      <StatusConsumer />
+    </HorizonRuntimeProvider>,
+  )
+  await screen.findByText('opened')
+  await userEvent.click(screen.getByText('Fechar'))
+  expect(screen.getByText('closed')).toBeInTheDocument()
+  await act(async () => reject(new Error('offline')))
+  expect(screen.getByText('opened')).toBeInTheDocument()
+})
+
+it('serializes rapid edits and preserves the last intent when the first write fails', async () => {
+  let reject!: (error: Error) => void
+  let confirm!: (issue: RuntimeSnapshot['issues'][number]) => void
+  vi.mocked(updateRuntimeIssueProperties)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          confirm = done
+        }),
+    )
+  function Edits() {
+    const { snapshot, provider } = useHorizonRuntime()
+    return (
+      <>
+        <span>{snapshot?.issues[0]?.labels.join(',')}</span>
+        <button
+          onClick={() => {
+            void provider.updateIssueProperties(10, 7, { status: 'Concluído' }).catch(() => {})
+            void provider.updateIssueProperties(10, 7, { status: 'Em andamento' }).catch(() => {})
+          }}
+        >
+          Editar duas vezes
+        </button>
+      </>
+    )
+  }
+  const load = vi.fn(async () => snapshot('Antes'))
+  const before = vi.mocked(updateRuntimeIssueProperties).mock.calls.length
+  render(
+    <HorizonRuntimeProvider loadSnapshot={load} pollingIntervalMs={0}>
+      <Edits />
+    </HorizonRuntimeProvider>,
+  )
+  await waitFor(() => expect(load).toHaveBeenCalled())
+  await userEvent.click(screen.getByText('Editar duas vezes'))
+  expect(screen.getByText('horizon::status::Em andamento')).toBeInTheDocument()
+  expect(updateRuntimeIssueProperties).toHaveBeenCalledTimes(before + 1)
+  await act(async () => reject(new Error('offline')))
+  expect(updateRuntimeIssueProperties).toHaveBeenCalledTimes(before + 2)
+  expect(screen.getByText('horizon::status::Em andamento')).toBeInTheDocument()
+  await act(async () =>
+    confirm({ ...snapshot('Antes').issues[0]!, labels: ['horizon::status::Em andamento'] }),
+  )
+  expect(screen.getByText('horizon::status::Em andamento')).toBeInTheDocument()
+})
+
+it('does not let a poll started before a write undo the confirmed write', async () => {
+  let finishPoll!: (value: RuntimeSnapshot) => void
+  const load = vi
+    .fn()
+    .mockResolvedValueOnce(snapshot('Antes'))
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          finishPoll = done
+        }),
+    )
+  vi.mocked(updateRuntimeIssueProperties).mockResolvedValueOnce({
+    ...snapshot('Antes').issues[0]!,
+    state: 'closed',
+  })
+  function Race() {
+    const runtime = useHorizonRuntime()
+    return (
+      <>
+        <span>{runtime.snapshot?.issues[0]?.state}</span>
+        <button onClick={() => void runtime.refresh()}>Poll</button>
+        <button
+          onClick={() =>
+            void runtime.provider.updateIssueProperties(10, 7, { status: 'Concluído' })
+          }
+        >
+          Salvar status
+        </button>
+      </>
+    )
+  }
+  render(
+    <HorizonRuntimeProvider loadSnapshot={load} pollingIntervalMs={0}>
+      <Race />
+    </HorizonRuntimeProvider>,
+  )
+  await screen.findByText('opened')
+  await userEvent.click(screen.getByText('Poll'))
+  await userEvent.click(screen.getByText('Salvar status'))
+  await act(async () => finishPoll(snapshot('Antes')))
+  expect(screen.getByText('closed')).toBeInTheDocument()
+})
+
+it('preserves unchanged records and catalogs across polling', async () => {
+  const { shareSnapshot } = await import('~/runtime/runtime-provider')
+  const previous = snapshot('Antes')
+  const identical = shareSnapshot(previous, structuredClone(previous))
+  expect(identical.issues).toBe(previous.issues)
+  expect(identical.projects).toBe(previous.projects)
+  const changed = shareSnapshot(previous, snapshot('Depois'))
+  expect(changed.issues[0]).not.toBe(previous.issues[0])
+  expect(changed.projects).toBe(previous.projects)
 })

@@ -241,19 +241,27 @@ export class GitLabReadProvider implements ProviderReadContract {
     )
   }
   async searchDiscussions(query: string, projectIds: readonly number[]) {
-    const matches: ProviderDiscussionMatch[] = []
-    for (const projectId of projectIds) {
-      const result = await this.request(
-        `projects/${projectId}/search?scope=notes&search=${encodeURIComponent(query)}`,
-      )
-      matches.push(
-        ...(result.value as any[]).flatMap((value) =>
+    const results = await Promise.all(
+      projectIds.map(async (projectId) => {
+        const items = await readAllPagesFast<any>(async (pageNo) => {
+          const result = await this.request(
+            `projects/${projectId}/search?scope=notes&search=${encodeURIComponent(query)}`,
+            pageNo,
+          )
+          return page(result.value, result.next, result.total)
+        })
+        return items.flatMap((value) =>
           typeof value.noteable_iid === 'number' ? [{ projectId, iid: value.noteable_iid }] : [],
-        ),
-      )
-    }
-    return matches
+        )
+      }),
+    )
+    return [
+      ...new Map(
+        results.flat().map((match) => [`${match.projectId}:${match.iid}`, match]),
+      ).values(),
+    ]
   }
+
   /**
    * Parent/child links come from GraphQL: REST has no field for them. One call
    * carries several projects, which keeps a Escopo with hundreds of
@@ -329,25 +337,18 @@ export class GitLabReadProvider implements ProviderReadContract {
   }
 
   async readScope(scope: ScopeSelection) {
-    const projects: ProviderProject[] = []
-    for (let p = 1; ; p++) {
-      const r = await this.listProjects(p)
-      projects.push(
-        ...r.items.filter(
-          (x) =>
-            scope.projects.includes(x.id) ||
-            scope.groups.some((g) => x.groupPath === g || x.groupPath?.startsWith(`${g}/`)),
+    const projects = (await readAllPagesFast((p) => this.listProjects(p))).filter(
+      (project) =>
+        scope.projects.includes(project.id) ||
+        scope.groups.some(
+          (group) => project.groupPath === group || project.groupPath?.startsWith(`${group}/`),
         ),
+    )
+    const issues = (
+      await Promise.all(
+        projects.map((project) => readAllPagesFast((p) => this.listIssues(project.id, p))),
       )
-      if (!r.nextPage) break
-    }
-    const issues: ProviderIssue[] = []
-    for (const project of projects)
-      for (let p = 1; ; p++) {
-        const r = await this.listIssues(project.id, p)
-        issues.push(...r.items)
-        if (!r.nextPage) break
-      }
+    ).flat()
     return { groups: [], projects, issues }
   }
 }

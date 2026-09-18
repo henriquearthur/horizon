@@ -110,11 +110,13 @@ export const relativeTime = (value: string | undefined, now = Date.now()): strin
   return 'agora'
 }
 
+const absolute = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' })
+
 export const absoluteTime = (value: string | undefined): string | undefined => {
   if (!value) return undefined
   const time = new Date(value)
   if (Number.isNaN(time.getTime())) return undefined
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(time)
+  return absolute.format(time)
 }
 
 const TYPE_PREFIX = 'type:'

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
@@ -111,6 +111,11 @@ export function InboxContent({
   const [detailError, setDetailError] = useState<string>()
   const [detailLoading, setDetailLoading] = useState(false)
   const detailRequest = useRef(0)
+  const scopeIdentity = JSON.stringify(snapshot.scope)
+  const discussionCache = useMemo(
+    () => new Map<string, readonly ProviderComment[]>(),
+    [provider, scopeIdentity],
+  )
   const [creating, setCreating] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<number>()
   const [saveName, setSaveName] = useState('')
@@ -158,15 +163,19 @@ export function InboxContent({
       setDiscussionMatches([])
       return
     }
-    void searchRuntimeDiscussions({ data: { query } })
-      .then((matches) => {
-        if (active) setDiscussionMatches(matches)
-      })
-      .catch(() => {
-        if (active) setDiscussionMatches([])
-      })
+    setDiscussionMatches([])
+    const timer = setTimeout(() => {
+      void searchRuntimeDiscussions({ data: { query } })
+        .then((matches) => {
+          if (active) setDiscussionMatches(matches)
+        })
+        .catch(() => {
+          if (active) setDiscussionMatches([])
+        })
+    }, 300)
     return () => {
       active = false
+      clearTimeout(timer)
     }
   }, [query])
 
@@ -190,7 +199,7 @@ export function InboxContent({
     if (view._tag === 'Initiative')
       issues = issues.filter((issue) => initiativeIdsFromLabels(issue.labels).includes(view.id))
     return issues
-  }, [projectById, snapshot, view])
+  }, [projectById, snapshot.issues, view])
   const issues = useMemo(() => {
     const found = searchIssues(available, query, snapshot.projects)
     const discussionKeys = new Set(
@@ -222,9 +231,11 @@ export function InboxContent({
     for (const issue of issues) {
       if (issue.parentIid === undefined) continue
       const parent = `${issue.projectId}:${issue.parentIid}`
-      map.set(parent, [...(map.get(parent) ?? []), issue])
+      const children = map.get(parent)
+      if (children) children.push(issue)
+      else map.set(parent, [issue])
     }
-    for (const [key, children] of map) map.set(key, [...children].sort(byAge))
+    for (const children of map.values()) children.sort(byAge)
     return map
   }, [issues])
   /** Bloqueios are read once over the whole Escopo, not per row. */
@@ -278,18 +289,54 @@ export function InboxContent({
     )
 
   /** Counts come from the Issues the View offers, so a filter never reads `0` by surprise. */
-  const countBy = (match: (issue: ProviderIssue) => boolean) => available.filter(match).length
-  const labels = [...new Set(snapshot.issues.flatMap((issue) => issue.labels))].filter(
-    (label) => !isHorizonLabel(label),
+  const facets = useMemo(() => {
+    const counts = new Map<string, number>()
+    const add = (field: string, value: string | number) => {
+      const key = `${field}:${value}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    for (const issue of available) {
+      const properties = readIssueProperties(issue)
+      add('status', properties.status)
+      add('priority', properties.priority ?? 'Sem prioridade')
+      add('project', issue.projectId)
+      if (issue.author) add('author', issue.author.username)
+      for (const user of issue.assignees) add('assignee', user.username)
+      for (const label of new Set(issue.labels)) add('label', label)
+      const path = projectById.get(issue.projectId)?.groupPath
+      if (path) {
+        const parts = path.split('/')
+        for (let length = 1; length <= parts.length; length++)
+          add('group', parts.slice(0, length).join('/'))
+      }
+    }
+    return counts
+  }, [available, projectById])
+  const count = (field: string, value: string | number) => facets.get(`${field}:${value}`) ?? 0
+  const options = useMemo(
+    () => ({
+      labels: [...new Set(snapshot.issues.flatMap((issue) => issue.labels))].filter(
+        (label) => !isHorizonLabel(label),
+      ),
+      initiativeIds: snapshot.issues.flatMap((issue) => initiativeIdsFromLabels(issue.labels)),
+      authors: [...new Set(snapshot.issues.flatMap((issue) => issue.author?.username ?? []))],
+      assignees: [
+        ...new Set(
+          snapshot.issues.flatMap((issue) => issue.assignees.map((user) => user.username)),
+        ),
+      ],
+      incomplete: snapshot.issues.filter(
+        (issue) => readIssueProperties(issue).status !== 'Concluído',
+      ).length,
+    }),
+    [snapshot.issues],
   )
-  const initiatives = useInitiatives(
-    snapshot.issues.flatMap((issue) => initiativeIdsFromLabels(issue.labels)),
+  const { labels, authors, assignees } = options
+  const initiatives = useInitiatives(options.initiativeIds)
+  const userByUsername = useMemo(
+    () => new Map(snapshot.users.map((user) => [user.username, user])),
+    [snapshot.users],
   )
-  const userByUsername = new Map(snapshot.users.map((user) => [user.username, user]))
-  const authors = [...new Set(snapshot.issues.flatMap((issue) => issue.author?.username ?? []))]
-  const assignees = [
-    ...new Set(snapshot.issues.flatMap((issue) => issue.assignees.map((user) => user.username))),
-  ]
 
   const filterDefinitions: readonly FilterDefinition[] = [
     {
@@ -300,8 +347,7 @@ export function InboxContent({
         {
           value: 'true',
           label: 'Ocultar concluídos',
-          count: snapshot.issues.filter((i) => readIssueProperties(i).status !== 'Concluído')
-            .length,
+          count: options.incomplete,
         },
       ],
     },
@@ -312,7 +358,7 @@ export function InboxContent({
       options: STATUS_VALUES.map((value) => ({
         value,
         label: value,
-        count: countBy((issue) => readIssueProperties(issue).status === value),
+        count: count('status', value),
         adornment: <StatusDot status={value} />,
       })),
     },
@@ -323,9 +369,7 @@ export function InboxContent({
       options: PRIORITY_VALUES.map((value) => ({
         value,
         label: value,
-        count: countBy(
-          (issue) => (readIssueProperties(issue).priority ?? 'Sem prioridade') === value,
-        ),
+        count: count('priority', value),
         adornment: <PriorityBadge priority={value} />,
       })),
     },
@@ -336,7 +380,7 @@ export function InboxContent({
       options: labels.map((value) => ({
         value,
         label: value,
-        count: countBy((issue) => issue.labels.includes(value)),
+        count: count('label', value),
         adornment: <LabelChip label={value} className="max-w-20" />,
       })),
     },
@@ -347,7 +391,7 @@ export function InboxContent({
       options: assignees.map((value) => ({
         value,
         label: userByUsername.get(value)?.name ?? value,
-        count: countBy((issue) => issue.assignees.some((user) => user.username === value)),
+        count: count('assignee', value),
         adornment: <UserAvatar user={userByUsername.get(value)} size="xs" />,
       })),
     },
@@ -358,7 +402,7 @@ export function InboxContent({
       options: authors.map((value) => ({
         value,
         label: userByUsername.get(value)?.name ?? value,
-        count: countBy((issue) => issue.author?.username === value),
+        count: count('author', value),
         adornment: <UserAvatar user={userByUsername.get(value)} size="xs" />,
       })),
     },
@@ -369,7 +413,7 @@ export function InboxContent({
       options: snapshot.projects.map((project) => ({
         value: String(project.id),
         label: `${project.namespace}/${project.path}`,
-        count: countBy((issue) => issue.projectId === project.id),
+        count: count('project', project.id),
       })),
     },
     {
@@ -379,23 +423,21 @@ export function InboxContent({
       options: snapshot.groups.map((scopeGroup) => ({
         value: scopeGroup.fullPath,
         label: scopeGroup.fullPath,
-        count: countBy((issue) => {
-          const path = projectById.get(issue.projectId)?.groupPath
-          return (
-            path === scopeGroup.fullPath || path?.startsWith(`${scopeGroup.fullPath}/`) === true
-          )
-        }),
+        count: count('group', scopeGroup.fullPath),
       })),
     },
   ]
 
   const hasFilters = Object.keys(filters).length > 0
 
-  const showIssue = (value: string | undefined) => {
-    setPendingRef({ value })
-    onIssueSelected?.(value)
-  }
-  const openIssue = (issue: ProviderIssue) => showIssue(issueKey(issue))
+  const showIssue = useCallback(
+    (value: string | undefined) => {
+      setPendingRef({ value })
+      onIssueSelected?.(value)
+    },
+    [onIssueSelected],
+  )
+  const openIssue = useCallback((issue: ProviderIssue) => showIssue(issueKey(issue)), [showIssue])
 
   // Once the URL carries the choice, the URL is in charge again.
   useEffect(() => setPendingRef(undefined), [issueRef])
@@ -403,7 +445,7 @@ export function InboxContent({
   // The discussion follows the Issue in the URL: opening, switching and closing
   // are all the same navigation.
   useEffect(() => {
-    setComments([])
+    setComments(openRef ? (discussionCache.get(openRef) ?? []) : [])
     setDetailError(undefined)
     if (!openRef) {
       setDetailLoading(false)
@@ -411,13 +453,24 @@ export function InboxContent({
     }
     const [projectId = NaN, iid = NaN] = openRef.split(':').map(Number)
     if (!Number.isInteger(projectId) || !Number.isInteger(iid)) return
+    const cachedIds = new Set((discussionCache.get(openRef) ?? []).map((comment) => comment.id))
     const requestId = ++detailRequest.current
     setDetailLoading(true)
     let active = true
     void provider
       .listComments(projectId, iid)
       .then((loaded) => {
-        if (active) setComments(loaded)
+        discussionCache.delete(openRef)
+        discussionCache.set(openRef, loaded)
+        if (discussionCache.size > 50) discussionCache.delete(discussionCache.keys().next().value!)
+        if (active)
+          setComments((current) => [
+            ...new Map(
+              [...loaded, ...current.filter((comment) => !cachedIds.has(comment.id))].map(
+                (comment) => [comment.id, comment],
+              ),
+            ).values(),
+          ])
       })
       .catch((cause: unknown) => {
         if (active)
@@ -431,16 +484,24 @@ export function InboxContent({
     return () => {
       active = false
     }
-  }, [openRef, provider])
+  }, [openRef, provider, discussionCache])
 
-  const changeStatus = async (issue: ProviderIssue, status: IssueStatus) => {
-    setDetailError(undefined)
-    try {
-      await provider.updateIssueProperties(issue.projectId, issue.iid, { status })
-    } catch (cause) {
-      setDetailError(cause instanceof Error ? cause.message : 'Não foi possível mover o issue.')
-    }
-  }
+  const changeStatus = useCallback(
+    async (issue: ProviderIssue, status: IssueStatus) => {
+      setDetailError(undefined)
+      try {
+        await provider.updateIssueProperties(issue.projectId, issue.iid, { status })
+      } catch (cause) {
+        setDetailError(cause instanceof Error ? cause.message : 'Não foi possível mover o issue.')
+      }
+    },
+    [provider],
+  )
+
+  const handleStatusChange = useCallback(
+    (issue: ProviderIssue, status: IssueStatus) => void changeStatus(issue, status),
+    [changeStatus],
+  )
 
   const saveCurrentView = () => {
     const name = saveName.trim()
@@ -617,7 +678,7 @@ export function InboxContent({
             blockedKeys={blockedKeys}
             onOpen={openIssue}
             selectedId={selected?.id}
-            onStatusChange={(issue, status) => void changeStatus(issue, status)}
+            onStatusChange={handleStatusChange}
           />
         )}
         {creating ? (
@@ -670,6 +731,7 @@ export function InboxContent({
         ) : null}
         {selected ? (
           <IssueDetailPanel
+            key={selected.id}
             issue={selected}
             comments={comments}
             provider={provider}
@@ -680,7 +742,11 @@ export function InboxContent({
             allIssues={snapshot.issues}
             projects={snapshot.projects}
             initiatives={initiatives}
-            onCommentCreated={(comment) => setComments((current) => [...current, comment])}
+            onCommentCreated={(comment) => {
+              const next = [...comments, comment]
+              discussionCache.set(issueKey(selected), next)
+              setComments(next)
+            }}
             users={snapshot.users}
             currentUser={snapshot.connection.user}
             loading={detailLoading}

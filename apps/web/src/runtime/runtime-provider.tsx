@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProviderIssue, ProviderWriteContract } from '@horizon/domain'
-import { issueCollection } from '~/db/collections'
+import { stateForStatus, writeIssueProperties } from '@horizon/domain'
 import {
   createRuntimeComment,
   createRuntimeIssue,
@@ -63,12 +63,43 @@ const merged = (
 ): ProviderIssue => {
   // A reopened Issue has no close date, even though the answer never says so.
   const { closedAt, ...previous } = cached
+  const { closedAt: nextClosedAt, ...next } = issue
   return {
     ...previous,
     ...(issue.state === 'closed' && closedAt ? { closedAt } : {}),
-    ...issue,
+    ...next,
+    ...(issue.state === 'closed' && nextClosedAt ? { closedAt: nextClosedAt } : {}),
     // Assignment is metadata, not a reason to jump to the top of the list.
     ...(preserveUpdatedAt && cached.updatedAt ? { updatedAt: cached.updatedAt } : {}),
+  }
+}
+
+/** Preserve record identity across polling so unchanged cards can skip rendering. */
+export const shareSnapshot = (
+  previous: RuntimeSnapshot | undefined,
+  next: RuntimeSnapshot,
+): RuntimeSnapshot => {
+  if (!previous) return next
+  const same = <T,>(left: T, right: T): T =>
+    JSON.stringify(left) === JSON.stringify(right) ? left : right
+  const byId = new Map(previous.issues.map((issue) => [issue.id, issue]))
+  const issues = next.issues.map((issue) => {
+    const cached = byId.get(issue.id)
+    return cached ? same(cached, issue) : issue
+  })
+  return {
+    ...next,
+    issues:
+      issues.length === previous.issues.length &&
+      issues.every((issue, index) => issue === previous.issues[index])
+        ? previous.issues
+        : issues,
+    projects: same(previous.projects, next.projects),
+    groups: same(previous.groups, next.groups),
+    users: same(previous.users, next.users),
+    labels: same(previous.labels, next.labels),
+    scope: same(previous.scope, next.scope),
+    connection: same(previous.connection, next.connection),
   }
 }
 
@@ -117,44 +148,92 @@ export function HorizonRuntimeProvider({
   const [error, setError] = useState<string>()
   const [lastUpdated, setLastUpdated] = useState<Date>()
   const loadedAt = useRef(0)
-  const running = useRef(false)
+  const running = useRef<Promise<void> | undefined>(undefined)
 
-  const cache = useCallback(async (next: RuntimeSnapshot) => {
-    await issueCollection.preload()
-    const nextIds = new Set(next.issues.map((issue) => issue.id))
-    const stale = [...issueCollection.keys()].filter((id) => !nextIds.has(id))
-    if (stale.length) issueCollection.delete(stale)
-    for (const issue of next.issues) {
-      if (issueCollection.has(issue.id))
-        issueCollection.update(issue.id, (draft) => Object.assign(draft, issue))
-      else issueCollection.insert(issue)
-    }
+  const currentSnapshot = useRef(snapshot)
+  const revision = useRef(0)
+  const changedAt = useRef(new Map<number, number>())
+  type Pending = {
+    base: ProviderIssue
+    patches: ((issue: ProviderIssue) => ProviderIssue)[]
+    tail: Promise<unknown>
+  }
+  const pending = useRef(new Map<number, Pending>())
+
+  const publish = useCallback((next: RuntimeSnapshot) => {
+    currentSnapshot.current = next
     setSnapshot(next)
-    writeRuntimeCache(next)
-    loadedAt.current = Date.now()
-    setLastUpdated(new Date())
   }, [])
+
+  // Storage is synchronous. Keep serialization out of the interaction that
+  // moved a card, and coalesce consecutive writes into one persistence pass.
+  useEffect(() => {
+    if (!snapshot) return
+    const timer = setTimeout(
+      () =>
+        writeRuntimeCache({
+          ...snapshot,
+          issues: snapshot.issues.map((issue) => pending.current.get(issue.id)?.base ?? issue),
+        }),
+      250,
+    )
+    return () => clearTimeout(timer)
+  }, [snapshot])
+
+  const cache = useCallback(
+    async (next: RuntimeSnapshot, startedAt: number) => {
+      const current = currentSnapshot.current
+      if (current && JSON.stringify(current.scope) === JSON.stringify(next.scope)) {
+        const protectedIssues = current.issues.filter(
+          (issue) =>
+            pending.current.has(issue.id) || (changedAt.current.get(issue.id) ?? 0) > startedAt,
+        )
+        const byId = new Map(protectedIssues.map((issue) => [issue.id, issue]))
+        const nextIds = new Set(next.issues.map((issue) => issue.id))
+        next = {
+          ...next,
+          issues: [
+            ...next.issues.map((issue) => byId.get(issue.id) ?? issue),
+            ...protectedIssues.filter((issue) => !nextIds.has(issue.id)),
+          ],
+        }
+      }
+      publish(shareSnapshot(current, next))
+      loadedAt.current = Date.now()
+      setLastUpdated(new Date())
+    },
+    [publish],
+  )
 
   const refresh = useCallback(
     async ({
       force = false,
       throwOnError = false,
     }: { force?: boolean; throwOnError?: boolean } = {}) => {
-      // One read at a time: a focus event landing on top of the poll used to
-      // double the load on GitLab for no new data.
-      if (running.current) return
-      running.current = true
-      setRefreshing(true)
+      if (force && running.current) await running.current.catch(() => {})
+      if (!running.current) {
+        setRefreshing(true)
+        const startedAt = revision.current
+        const task = loadSnapshot({ force })
+          .then(async (next) => {
+            await cache(next, startedAt)
+            setError(undefined)
+          })
+          .catch((cause: unknown) => {
+            setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a Inbox.')
+            throw cause
+          })
+          .finally(() => {
+            if (running.current === task) running.current = undefined
+            setLoading(false)
+            setRefreshing(false)
+          })
+        running.current = task
+      }
       try {
-        await cache(await loadSnapshot({ force }))
-        setError(undefined)
+        await running.current
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Não foi possível atualizar a Inbox.')
         if (throwOnError) throw cause
-      } finally {
-        running.current = false
-        setLoading(false)
-        setRefreshing(false)
       }
     },
     [cache, loadSnapshot],
@@ -166,7 +245,9 @@ export function HorizonRuntimeProvider({
 
   useEffect(() => {
     if (!(pollingIntervalMs > 0)) return
-    const timer = globalThis.setInterval(() => void refresh(), pollingIntervalMs)
+    const timer = globalThis.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh()
+    }, pollingIntervalMs)
     // Coming back to the tab is worth one read, but only if the data aged out.
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return
@@ -179,19 +260,61 @@ export function HorizonRuntimeProvider({
     }
   }, [pollingIntervalMs, refresh])
 
-  const replaceIssue = useCallback((issue: ProviderIssue, preserveUpdatedAt = false) => {
-    setSnapshot((current) =>
-      current
-        ? {
-            ...current,
-            issues: replaceIssueInList(current.issues, issue, preserveUpdatedAt),
-          }
-        : current,
-    )
-    if (issueCollection.has(issue.id))
-      issueCollection.update(issue.id, (draft) => Object.assign(draft, issue))
-    else issueCollection.insert(issue)
-  }, [])
+  const replaceIssue = useCallback(
+    (issue: ProviderIssue, preserveUpdatedAt = false) => {
+      const current = currentSnapshot.current
+      if (!current) return
+      changedAt.current.set(issue.id, ++revision.current)
+      publish({ ...current, issues: replaceIssueInList(current.issues, issue, preserveUpdatedAt) })
+    },
+    [publish],
+  )
+
+  // Each issue has an ordered write queue. Later optimistic edits survive
+  // earlier failures, and polling cannot replace edits with an older snapshot.
+  const mutate = useCallback(
+    (
+      projectId: number,
+      iid: number,
+      patch: (issue: ProviderIssue) => ProviderIssue,
+      action: () => Promise<ProviderIssue>,
+      preserveUpdatedAt = false,
+    ): Promise<ProviderIssue> => {
+      const issue = currentSnapshot.current?.issues.find(
+        (item) => item.projectId === projectId && item.iid === iid,
+      )
+      if (!issue)
+        return action().then((result) => {
+          replaceIssue(result)
+          return result
+        })
+      let queue = pending.current.get(issue.id)
+      if (!queue) {
+        queue = { base: issue, patches: [], tail: Promise.resolve() }
+        pending.current.set(issue.id, queue)
+      }
+      const entry = queue
+      entry.patches.push(patch)
+      replaceIssue(patch(issue), preserveUpdatedAt)
+      const scope = JSON.stringify(currentSnapshot.current?.scope)
+      const request = entry.tail.then(action)
+      const settled = request
+        .then((result) => {
+          entry.base = merged(entry.base, result, preserveUpdatedAt)
+          return result
+        })
+        .finally(() => {
+          entry.patches.shift()
+          const visible = entry.patches.reduce((value, apply) => apply(value), entry.base)
+          if (!entry.patches.length) pending.current.delete(issue.id)
+          if (scope === JSON.stringify(currentSnapshot.current?.scope))
+            replaceIssue(visible, preserveUpdatedAt)
+        })
+      entry.tail = settled.catch(() => {})
+      return settled
+    },
+    [replaceIssue],
+  )
 
   const provider = useMemo<ProviderWriteContract>(
     () => ({
@@ -203,47 +326,74 @@ export function HorizonRuntimeProvider({
         replaceIssue(issue)
         return issue
       },
-      updateIssue: async (projectId, iid, changes) => {
-        const issue = await updateRuntimeIssue({ data: { projectId, iid, changes } })
-        const assignmentOnly = Object.keys(changes).every((key) => key === 'assigneeIds')
-        replaceIssue(issue, assignmentOnly)
-        return issue
-      },
+      updateIssue: (projectId, iid, changes) =>
+        mutate(
+          projectId,
+          iid,
+          (issue) => ({
+            ...issue,
+            ...('title' in changes ? { title: changes.title! } : {}),
+            ...('description' in changes ? { description: changes.description ?? '' } : {}),
+            ...('labels' in changes ? { labels: changes.labels ?? [] } : {}),
+            ...('assigneeIds' in changes
+              ? {
+                  assignees: (changes.assigneeIds ?? []).flatMap((id) => {
+                    const user =
+                      currentSnapshot.current?.users.find((item) => item.id === id) ??
+                      issue.assignees.find((item) => item.id === id) ??
+                      (currentSnapshot.current?.connection.user.id === id
+                        ? currentSnapshot.current.connection.user
+                        : undefined)
+                    return user ? [user] : []
+                  }),
+                }
+              : {}),
+          }),
+          () => updateRuntimeIssue({ data: { projectId, iid, changes } }),
+          Object.keys(changes).every((key) => key === 'assigneeIds'),
+        ),
       createComment: async (projectId, iid, body) => {
         const comment = await createRuntimeComment({ data: { projectId, iid, body } })
-        setSnapshot((current) =>
-          current
-            ? {
-                ...current,
-                issues: current.issues.map((issue) =>
-                  issue.projectId === projectId && issue.iid === iid
-                    ? { ...issue, commentCount: (issue.commentCount ?? 0) + 1 }
-                    : issue,
-                ),
-              }
-            : current,
+        const issue = currentSnapshot.current?.issues.find(
+          (item) => item.projectId === projectId && item.iid === iid,
         )
-        for (const issue of issueCollection.values()) {
-          if (issue.projectId === projectId && issue.iid === iid) {
-            issueCollection.update(issue.id, (draft) => {
-              draft.commentCount = (draft.commentCount ?? 0) + 1
-            })
-          }
+        if (issue) {
+          const queue = pending.current.get(issue.id)
+          if (queue)
+            queue.base = { ...queue.base, commentCount: (queue.base.commentCount ?? 0) + 1 }
+          replaceIssue({ ...issue, commentCount: (issue.commentCount ?? 0) + 1 })
         }
         return comment
       },
-      setIssueState: async (projectId, iid, state) => {
-        const issue = await setRuntimeIssueState({ data: { projectId, iid, state } })
-        replaceIssue(issue)
-        return issue
-      },
-      updateIssueProperties: async (projectId, iid, changes) => {
-        const issue = await updateRuntimeIssueProperties({ data: { projectId, iid, changes } })
-        replaceIssue(issue)
-        return issue
-      },
+      setIssueState: (projectId, iid, state) =>
+        mutate(
+          projectId,
+          iid,
+          (issue) => ({
+            ...issue,
+            state,
+            ...(state === 'closed' ? { closedAt: new Date().toISOString() } : {}),
+          }),
+          () => setRuntimeIssueState({ data: { projectId, iid, state } }),
+        ),
+      updateIssueProperties: (projectId, iid, changes) =>
+        mutate(
+          projectId,
+          iid,
+          (issue) => ({
+            ...issue,
+            labels: writeIssueProperties(issue.labels, changes),
+            ...(changes.status
+              ? {
+                  state: stateForStatus(changes.status),
+                  ...(changes.status === 'Concluído' ? { closedAt: new Date().toISOString() } : {}),
+                }
+              : {}),
+          }),
+          () => updateRuntimeIssueProperties({ data: { projectId, iid, changes } }),
+        ),
     }),
-    [replaceIssue],
+    [mutate, replaceIssue],
   )
 
   const value = useMemo<HorizonRuntimeValue>(

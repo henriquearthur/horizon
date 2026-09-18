@@ -1,4 +1,10 @@
-import { selectedProjects, type ProviderIssue, type ProviderWriteContract } from '@horizon/domain'
+import {
+  selectedProjects,
+  type ProviderIssue,
+  type ProviderComment,
+  type ProviderMergeRequest,
+  type ProviderWriteContract,
+} from '@horizon/domain'
 import type {
   CreateIssueInput,
   IssuePriority,
@@ -6,7 +12,8 @@ import type {
   UpdateIssueInput,
 } from '@horizon/domain'
 import {
-  invalidateIssues,
+  cacheWrittenIssue,
+  cacheCreatedComment,
   projectMetadata,
   providerCatalog,
   providerSnapshot,
@@ -15,11 +22,28 @@ import {
   type ProviderSnapshot,
 } from './gitlab'
 import { scopeStore } from './scope-store'
+import { TimedCache } from './timed-cache'
+
+const cachedRead = <T>(
+  caches: Map<string, TimedCache<T>>,
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> => {
+  let cache = caches.get(key)
+  if (!cache) {
+    cache = new TimedCache(15_000, load)
+    if (caches.size >= 100) caches.delete(caches.keys().next().value!)
+    caches.set(key, cache)
+  }
+  return cache.get()
+}
 
 /** What the shell needs to render the Inbox in one round trip. */
 export type RuntimeSnapshot = ProviderSnapshot
 
 export class RuntimeService {
+  readonly #comments = new Map<string, TimedCache<readonly ProviderComment[]>>()
+  readonly #mergeRequests = new Map<string, TimedCache<readonly ProviderMergeRequest[]>>()
   constructor(
     private readonly snapshotOf: typeof providerSnapshot = providerSnapshot,
     private readonly writeProvider: () => ProviderWriteContract = writer,
@@ -39,11 +63,17 @@ export class RuntimeService {
   }
 
   listMergeRequests(projectId: number, iid: number) {
-    return this.writeProvider().listMergeRequests?.(projectId, iid) ?? Promise.resolve([])
+    return cachedRead(
+      this.#mergeRequests,
+      `${projectId}:${iid}`,
+      () => this.writeProvider().listMergeRequests?.(projectId, iid) ?? Promise.resolve([]),
+    )
   }
 
   listComments(projectId: number, iid: number) {
-    return this.writeProvider().listComments(projectId, iid)
+    return cachedRead(this.#comments, `${projectId}:${iid}`, () =>
+      this.writeProvider().listComments(projectId, iid),
+    )
   }
 
   async searchDiscussions(query: string) {
@@ -68,7 +98,8 @@ export class RuntimeService {
 
   async createComment(projectId: number, iid: number, body: string) {
     const comment = await this.writeProvider().createComment(projectId, iid, body)
-    invalidateIssues()
+    this.#comments.get(`${projectId}:${iid}`)?.invalidate()
+    cacheCreatedComment(projectId, iid)
     return comment
   }
 
@@ -89,12 +120,12 @@ export class RuntimeService {
   }
 
   /**
-   * A confirmed write makes the cached Issue list stale. The browser already
-   * got the confirmed record back, so the next poll just picks up the rest.
+   * Patch only the confirmed Issue; keep the rest of the snapshot warm.
    */
   private async written(action: () => Promise<ProviderIssue>): Promise<ProviderIssue> {
     const issue = await action()
-    invalidateIssues()
+    this.#comments.get(`${issue.projectId}:${issue.iid}`)?.invalidate()
+    cacheWrittenIssue(issue)
     return issue
   }
 }

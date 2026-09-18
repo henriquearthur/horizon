@@ -1,5 +1,5 @@
 import {
-  readAllPages,
+  readAllPagesFast,
   resolveIssueReference,
   selectedGroups,
   selectedProjects,
@@ -240,10 +240,11 @@ export async function callReadTool(
       }
       case 'get_metadata': {
         const i = await issue(ctx, args.reference)
-        return {
-          users: await readAllPages((p) => ctx.provider.listUsers(i.projectId, p)),
-          labels: await readAllPages((p) => ctx.provider.listLabels(i.projectId, p)),
-        }
+        const [users, labels] = await Promise.all([
+          readAllPagesFast((p) => ctx.provider.listUsers(i.projectId, p)),
+          readAllPagesFast((p) => ctx.provider.listLabels(i.projectId, p)),
+        ])
+        return { users, labels }
       }
       case 'get_hierarchy': {
         const d = await readScope(ctx)

@@ -2,7 +2,6 @@ import {
   createGitLabProvider,
   GitLabReadProvider,
   GitLabWriteProvider,
-  readAllPages,
   readAllPagesFast,
   selectedGroups,
   selectedProjects,
@@ -99,10 +98,13 @@ export const projectMetadata = async (projectId: number): Promise<ProjectMetadat
   const existing = metadataByProject.get(projectId)
   if (existing) return existing.get()
   const cache = new TimedCache<ProjectMetadata>(CATALOG_TTL_MS, async () => {
-    const provider = reader()
+    const provider = new GitLabReadProvider(credentials(), fetch, {
+      ...READ_HTTP,
+      priority: 'interactive',
+    })
     const [users, labels] = await Promise.all([
-      readAllPages((page) => provider.listUsers(projectId, page)),
-      readAllPages((page) => provider.listLabels(projectId, page)),
+      readAllPagesFast((page) => provider.listUsers(projectId, page)),
+      readAllPagesFast((page) => provider.listLabels(projectId, page)),
     ])
     return { users, labels }
   })
@@ -217,6 +219,30 @@ export const providerCatalog = async (force = false) => {
 
 /** After a confirmed write the cached Issue list is stale. */
 export const invalidateIssues = (): void => issuesCache.invalidate()
+
+/** Keep unrelated repositories warm after editing one Issue. */
+export const cacheWrittenIssue = (issue: ProviderIssue): void => {
+  issuesCache.update((issues) => {
+    const existing = issues.find((item) => item.id === issue.id)
+    if (!existing) return [issue, ...issues]
+    const { closedAt, ...previous } = existing
+    const updated = {
+      ...previous,
+      ...(issue.state === 'closed' && closedAt ? { closedAt } : {}),
+      ...issue,
+    }
+    return issues.map((item) => (item.id === issue.id ? updated : item))
+  })
+}
+
+export const cacheCreatedComment = (projectId: number, iid: number): void =>
+  issuesCache.update((issues) =>
+    issues.map((issue) =>
+      issue.projectId === projectId && issue.iid === iid
+        ? { ...issue, commentCount: (issue.commentCount ?? 0) + 1 }
+        : issue,
+    ),
+  )
 
 /** Drop every read that depends on which projects are in the Escopo. */
 export const invalidateScopedReads = (): void => {
