@@ -90,8 +90,8 @@ systemd-analyze --user verify "$temporary_unit"
 mv "$temporary_unit" "$unit_file"
 
 install -m 0755 "$script_dir/publish-nitro.sh" "$installed_publisher"
-sed -e "s|__HORIZON_PUBLISHER__|$(escape_sed "$installed_publisher")|g" \
-  "$update_unit_template" >"$temporary_update_unit"
+"$script_dir/render-nitro-update-unit.sh" \
+  "$update_unit_template" "$temporary_update_unit" "$installed_publisher"
 chmod 0644 "$temporary_update_unit"
 install -m 0644 "$timer_template" "$timer_unit"
 systemd-analyze --user verify "$temporary_update_unit" "$timer_unit"

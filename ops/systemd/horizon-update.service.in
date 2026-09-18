@@ -5,4 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=PATH=__HORIZON_TOOL_PATH__
 ExecStart=__HORIZON_PUBLISHER__

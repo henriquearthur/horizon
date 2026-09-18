@@ -11,7 +11,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test && pnpm test:ops",
-    "test:ops": "bash scripts/test-publish-nitro.sh",
+    "test:ops": "bash scripts/test-systemd-tool-path.sh && bash scripts/test-publish-nitro.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build"
