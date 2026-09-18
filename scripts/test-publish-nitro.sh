@@ -116,8 +116,15 @@ assert_contains "$output" 'HORIZON_PUBLISH_RESULT=published'
 assert_response one
 first_commit=$(<"$state/active/.horizon-commit")
 
+healthy_pid=$(<"$test_root/service.pid")
 output=$($publisher)
 assert_contains "$output" 'HORIZON_PUBLISH_RESULT=no-change'
+[[ $(<"$test_root/service.pid") == "$healthy_pid" ]] || fail 'healthy service was restarted'
+"$service" stop
+output=$($publisher)
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=no-change'
+assert_response one
+[[ $(wc -l <"$BUILD_LOG") == 1 ]] || fail 'stopped service recovery rebuilt the release'
 
 commit_version two
 output=$($publisher)
@@ -188,11 +195,14 @@ output=$($publisher 2>&1)
 status=$?
 set -e
 [[ $status == 20 ]] || fail "transient fetch failure returned $status"
-assert_contains "$output" 'next automatic attempt in 120s'
+[[ $(<"$state/transient-failures") == 1 && $(<"$state/transient-retry-at") == 1120 ]] ||
+  fail 'first failure did not schedule 120-second backoff'
 
 export HORIZON_NOW_EPOCH=1001
 output=$($publisher)
 assert_contains "$output" 'HORIZON_PUBLISH_RESULT=backoff'
+[[ $(<"$state/transient-failures") == 1 && $(<"$state/transient-retry-at") == 1120 ]] ||
+  fail 'backoff performed another attempt'
 
 export HORIZON_NOW_EPOCH=1120
 set +e
@@ -200,19 +210,76 @@ output=$($publisher 2>&1)
 status=$?
 set -e
 [[ $status == 20 ]] || fail "second transient fetch failure returned $status"
-assert_contains "$output" 'next automatic attempt in 240s'
+[[ $(<"$state/transient-failures") == 2 && $(<"$state/transient-retry-at") == 1360 ]] ||
+  fail 'second failure did not schedule 240-second backoff'
 
 git -C "$source_dir" remote set-url origin "$remote"
 export HORIZON_NOW_EPOCH=1360
 output=$($publisher)
 assert_contains "$output" 'HORIZON_PUBLISH_RESULT=published'
 assert_response four
+[[ ! -e $state/transient-failures && ! -e $state/transient-retry-at ]] || fail 'success retained backoff'
 unset HORIZON_NOW_EPOCH
 
 [[ $(<"$state/data/scope.json") == 'scope survives' ]] || fail 'scope data changed'
 [[ $(<"$test_root/config/horizon.env") == 'secret survives' ]] || fail 'connection configuration changed'
 release_count=$(find "$state/releases" -mindepth 1 -maxdepth 1 -type d | wc -l)
 [[ $release_count == 2 ]] || fail "expected active and previous releases, found $release_count"
+
+# Exercise pnpm itself: an incompatible frozen lockfile is commit-specific,
+# while a refused package download must remain eligible for a later attempt.
+cat >"$seed/package.json" <<'PACKAGE'
+{"name":"publisher-install-test","version":"1.0.0","dependencies":{"is-number":"7.0.0"}}
+PACKAGE
+cat >"$seed/pnpm-lock.yaml" <<'LOCK'
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+importers:
+  .: {}
+LOCK
+git -C "$seed" add package.json pnpm-lock.yaml
+commit_version invalid-lockfile
+set +e
+output=$(HORIZON_BUILD_PROGRAM='' "$publisher" 2>&1)
+status=$?
+set -e
+[[ $status == 21 ]] || fail "frozen lockfile mismatch returned $status: $output"
+[[ $(<"$state/rejected-commit") == "$(git -C "$seed" rev-parse HEAD)" ]] || fail 'invalid lockfile commit was not rejected'
+[[ ! -e $state/transient-retry-at ]] || fail 'invalid lockfile scheduled transient retry'
+output=$(HORIZON_BUILD_PROGRAM='' "$publisher")
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=rejected-unchanged'
+assert_response four
+
+cat >"$seed/pnpm-lock.yaml" <<'LOCK'
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+importers:
+  .:
+    dependencies:
+      is-number:
+        specifier: 7.0.0
+        version: 7.0.0
+packages:
+  is-number@7.0.0:
+    resolution: {tarball: http://127.0.0.1:1/is-number-7.0.0.tgz}
+snapshots:
+  is-number@7.0.0: {}
+LOCK
+printf 'fetch-retries=0\nfetch-timeout=1000\nstore-dir=%s/pnpm-store\n' "$test_root" >"$seed/.npmrc"
+git -C "$seed" add pnpm-lock.yaml .npmrc
+commit_version unavailable-dependency
+set +e
+output=$(HORIZON_BUILD_PROGRAM='' HORIZON_NOW_EPOCH=2000 "$publisher" 2>&1)
+status=$?
+set -e
+[[ $status == 20 ]] || fail "package download failure returned $status: $output"
+[[ $(<"$state/transient-failures") == 1 && $(<"$state/transient-retry-at") == 2120 ]] || fail 'download failure did not schedule retry'
+[[ $(<"$state/rejected-commit") != "$(git -C "$seed" rev-parse HEAD)" ]] || fail 'download failure rejected the commit'
+assert_response four
 
 commit_version broken-initial start-fail
 initial_state="$test_root/initial-state"
