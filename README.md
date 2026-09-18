@@ -33,15 +33,17 @@ Run everything from the repository root. Requires Node >= 22.12 and pnpm.
 
 ```bash
 pnpm install
-pnpm dev          # dev server on 0.0.0.0:3000
+pnpm dev          # dev server on 0.0.0.0:7346
 pnpm build
+pnpm --filter @horizon/web start # production server on 0.0.0.0:7346
 pnpm typecheck
 pnpm test
 pnpm check        # format, typecheck, test and build
 ```
 
-The dev server listens on `0.0.0.0`, so on the Nitro machine it is reachable at
-`http://nitro:3000` over Tailscale.
+Both development and production servers listen on `0.0.0.0:7346`. On the Nitro
+machine, Horizon is reachable at `http://nitro:7346` over Tailscale, and its MCP
+endpoint is `http://nitro:7346/mcp`.
 
 ## Docs
 
