@@ -56,11 +56,13 @@ printf 'scope survives\n' >"$state/data/scope.json"
 printf 'secret survives\n' >"$test_root/config/horizon.env"
 
 builder="$test_root/build"
+export BUILD_LOG="$test_root/build.log"
 cat >"$builder" <<'BUILDER'
 #!/usr/bin/env bash
 set -euo pipefail
 source_dir=$1
 output_dir=$2
+printf '%s\n' "$3" >>"$BUILD_LOG"
 delay=$(<"$source_dir/BUILD_DELAY")
 [[ -n ${BUILD_STARTED_FILE:-} ]] && : >"$BUILD_STARTED_FILE"
 sleep "$delay"
@@ -133,6 +135,22 @@ set -e
 assert_contains "$output" 'HORIZON_PUBLISH_RESULT=rejected'
 [[ $(<"$state/active/.horizon-commit") == "$second_commit" ]] || fail 'build failure changed active release'
 assert_response two
+rejected_commit=$(git -C "$seed" rev-parse HEAD)
+rejected_builds=$(grep -c "$rejected_commit" "$BUILD_LOG")
+
+output=$($publisher)
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=rejected-unchanged'
+[[ $(grep -c "$rejected_commit" "$BUILD_LOG") == "$rejected_builds" ]] ||
+  fail 'rejected commit was rebuilt automatically'
+
+set +e
+output=$($publisher --retry-rejected 2>&1)
+status=$?
+set -e
+[[ $status == 21 ]] || fail "manual rejected retry returned $status"
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=rejected'
+[[ $(grep -c "$rejected_commit" "$BUILD_LOG") == $((rejected_builds + 1)) ]] ||
+  fail 'manual retry did not rebuild rejected commit'
 
 commit_version broken-start start-fail
 set +e
@@ -161,6 +179,35 @@ set -e
 assert_contains "$output" 'HORIZON_PUBLISH_RESULT=busy'
 wait "$first_publish_pid"
 assert_response three
+
+commit_version four
+git -C "$source_dir" remote set-url origin "$test_root/unavailable.git"
+export HORIZON_NOW_EPOCH=1000
+set +e
+output=$($publisher 2>&1)
+status=$?
+set -e
+[[ $status == 20 ]] || fail "transient fetch failure returned $status"
+assert_contains "$output" 'next automatic attempt in 120s'
+
+export HORIZON_NOW_EPOCH=1001
+output=$($publisher)
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=backoff'
+
+export HORIZON_NOW_EPOCH=1120
+set +e
+output=$($publisher 2>&1)
+status=$?
+set -e
+[[ $status == 20 ]] || fail "second transient fetch failure returned $status"
+assert_contains "$output" 'next automatic attempt in 240s'
+
+git -C "$source_dir" remote set-url origin "$remote"
+export HORIZON_NOW_EPOCH=1360
+output=$($publisher)
+assert_contains "$output" 'HORIZON_PUBLISH_RESULT=published'
+assert_response four
+unset HORIZON_NOW_EPOCH
 
 [[ $(<"$state/data/scope.json") == 'scope survives' ]] || fail 'scope data changed'
 [[ $(<"$test_root/config/horizon.env") == 'secret survives' ]] || fail 'connection configuration changed'

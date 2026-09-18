@@ -16,17 +16,57 @@ remote=${HORIZON_REMOTE:-origin}
 branch=${HORIZON_BRANCH:-main}
 build_program=${HORIZON_BUILD_PROGRAM:-}
 service_program=${HORIZON_SERVICE_PROGRAM:-}
+retry_rejected=false
+transient_failures_file="$state_dir/transient-failures"
+transient_retry_file="$state_dir/transient-retry-at"
+rejected_commit_file="$state_dir/rejected-commit"
+backoff_base=${HORIZON_TRANSIENT_BACKOFF_BASE:-120}
+backoff_max=${HORIZON_TRANSIENT_BACKOFF_MAX:-1800}
+now=${HORIZON_NOW_EPOCH:-$(date +%s)}
+
+if [[ ${1:-} == --retry-rejected ]]; then
+  retry_rejected=true
+  shift
+fi
+if (($#)); then
+  echo "Usage: $0 [--retry-rejected]" >&2
+  exit 2
+fi
 
 log() { printf 'horizon-publish: %s\n' "$*"; }
 result() { printf 'HORIZON_PUBLISH_RESULT=%s\n' "$1"; }
 
+write_state() {
+  local path=$1 value=$2 temporary="$1.$$.tmp"
+  printf '%s\n' "$value" >"$temporary"
+  mv -f -- "$temporary" "$path"
+}
+
+clear_transient_state() {
+  rm -f -- "$transient_failures_file" "$transient_retry_file"
+}
+
 fail_transient() {
+  local failures=0 delay
+  [[ -f $transient_failures_file ]] && read -r failures <"$transient_failures_file"
+  [[ $failures =~ ^[0-9]+$ ]] || failures=0
+  ((failures += 1))
+  delay=$backoff_base
+  for ((step = 1; step < failures && delay < backoff_max; step++)); do
+    delay=$((delay * 2))
+  done
+  ((delay > backoff_max)) && delay=$backoff_max
+  write_state "$transient_failures_file" "$failures"
+  write_state "$transient_retry_file" "$((now + delay))"
   log "$1"
+  log "transient attempt $failures; next automatic attempt in ${delay}s"
   result transient-failure
   exit 20
 }
 
 fail_rejected() {
+  write_state "$rejected_commit_file" "$candidate"
+  clear_transient_state
   log "$1"
   result rejected
   exit 21
@@ -61,6 +101,15 @@ if ! flock -n 9; then
   exit 22
 fi
 
+if [[ $retry_rejected == false && -f $transient_retry_file ]]; then
+  retry_at=$(<"$transient_retry_file")
+  if [[ $retry_at =~ ^[0-9]+$ && $now -lt $retry_at ]]; then
+    log "waiting until epoch $retry_at after a transient failure"
+    result backoff
+    exit 0
+  fi
+fi
+
 [[ -d $source_dir/.git ]] || fail_transient "dedicated clone not found: $source_dir"
 
 log "fetching $remote/$branch"
@@ -86,8 +135,18 @@ else
 fi
 
 if [[ $candidate == "$active_commit" ]]; then
+  clear_transient_state
   log "commit $candidate is already active"
   result no-change
+  exit 0
+fi
+
+rejected_commit=
+[[ -f $rejected_commit_file ]] && read -r rejected_commit <"$rejected_commit_file"
+if [[ $retry_rejected == false && $candidate == "$rejected_commit" ]]; then
+  clear_transient_state
+  log "commit $candidate was already rejected; waiting for a different commit or --retry-rejected"
+  result rejected-unchanged
   exit 0
 fi
 
@@ -149,6 +208,8 @@ if service_action restart && healthy; then
   done
 
   log "published commit $candidate"
+  rm -f -- "$rejected_commit_file"
+  clear_transient_state
   result published
   exit 0
 fi
@@ -161,11 +222,15 @@ if [[ -n $old_release && -d $old_release ]]; then
   log "recovering previous commit $active_commit"
   if service_action restart && healthy; then
     rm -rf -- "$candidate_release"
+    write_state "$rejected_commit_file" "$candidate"
+    clear_transient_state
     log "recovered commit $active_commit after rejecting $candidate"
     result recovered
     exit 21
   fi
   result recovery-failed
+  write_state "$rejected_commit_file" "$candidate"
+  clear_transient_state
   log "recovery of commit $active_commit failed"
   exit 23
 fi

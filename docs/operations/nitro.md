@@ -17,10 +17,10 @@ The installer can be run again safely. It creates a dedicated clone at
 `~/.local/share/horizon/source`, fetches the requested commit (the current
 `origin/main` by default), performs a frozen-lockfile production build and
 records the full commit in its release. Development checkouts are not touched.
-To pin the first installation explicitly, pass a commit:
+To choose another remote branch, pass its remote ref:
 
 ```bash
-scripts/install-nitro.sh 0123456789abcdef
+scripts/install-nitro.sh origin/main
 ```
 
 The service uses an absolute Node executable and is enabled under
@@ -46,7 +46,19 @@ survive builds and service restarts. Restart after changing the environment:
 systemctl --user restart horizon.service
 ```
 
-## Publish and recover
+## Automatic updates, publish and recover
+
+`horizon-update.timer` starts two minutes after boot and then starts
+`horizon-update.service` every two minutes (about 30 checks per hour). The
+oneshot service and manual commands use the same publisher and lock. Each run
+fetches authenticated Git through the dedicated clone's configured `origin`;
+there is no CI gate, webhook or runner. Inspect the schedule and its journal:
+
+```bash
+systemctl --user status horizon-update.timer
+systemctl --user list-timers horizon-update.timer
+journalctl --user-unit=horizon-update.service --since today
+```
 
 Publish the latest commit from `origin/main` manually:
 
@@ -66,15 +78,27 @@ publication, `active` points to the new release, `previous` points to the prior
 working release and older releases are removed.
 
 A dependency installation or fetch failure leaves the current service alone. A
-build failure also leaves it alone. If the new process fails to start or answer
-HTTP, the publisher restores the previous release, restarts it and verifies its
-HTTP response. On an initial publication there is no version to recover, so a
-failed candidate is removed and reported as rejected.
+transient failure is retried after 2, 4, 8, 16 and then at most 30 minutes;
+scheduled checks during that wait do no work. A build failure also leaves the
+service alone and records the rejected commit. Scheduled checks do not rebuild
+that commit until `main` changes. Retry that exact commit explicitly with:
+
+```bash
+~/.local/libexec/horizon/publish-nitro.sh --retry-rejected
+```
+
+The explicit retry also bypasses a current transient wait. If the new process
+fails to start or answer HTTP, the publisher restores the previous release,
+restarts it and verifies its HTTP response. On an initial publication there is
+no version to recover, so a failed candidate is removed and reported as
+rejected.
 
 The final output has a machine-readable `HORIZON_PUBLISH_RESULT`:
 
 - `published` and exit 0: the candidate is active;
 - `no-change` and exit 0: the fetched commit is already active;
+- `rejected-unchanged` and exit 0: the fetched commit remains suppressed;
+- `backoff` and exit 0: the next transient retry is not due yet;
 - `transient-failure` and exit 20: fetching, checkout or dependency installation
   failed;
 - `rejected` or `recovered` and exit 21: the candidate did not build or did not
