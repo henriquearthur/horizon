@@ -40,21 +40,41 @@ const parse = (labels: readonly string[], field: PropertyField, values: readonly
   }
 }
 
+/**
+ * The canonical Status a label value stands for, ignoring case and accepting
+ * the values older data was written with. `undefined` means the Provider
+ * carries a Status Horizon does not know.
+ */
+export const canonicalStatus = (value: string): IssueStatus | undefined => {
+  const key = value.trim().toLocaleLowerCase()
+  return (
+    STATUS_VALUES.find((status) => status.toLocaleLowerCase() === key) ?? LEGACY_STATUS_VALUES[key]
+  )
+}
+
+/** The canonical Prioridade a value stands for, accepting `P1`-style shorthand. */
+export const canonicalPriority = (value: string): IssuePriority | undefined => {
+  const key = value.trim().toLocaleLowerCase()
+  return PRIORITY_VALUES.find(
+    (priority) =>
+      priority.toLocaleLowerCase() === key || priority.toLocaleLowerCase().split(' ')[0] === key,
+  )
+}
+
 const readStatus = (labels: readonly string[]) => {
-  const canonical = parse(labels, 'status', STATUS_VALUES)
-  const legacy = labels
+  const written = labels
     .filter((label) => label.startsWith('horizon::status::'))
-    .map(
-      (label) => LEGACY_STATUS_VALUES[label.slice('horizon::status::'.length).toLocaleLowerCase()],
-    )
-    .filter((value): value is IssueStatus => value !== undefined)
+    .map((label) => label.slice('horizon::status::'.length))
+  const unknown = written.filter((value) => canonicalStatus(value) === undefined)
   const values = [
-    ...new Set([...(canonical.value ? [canonical.value as IssueStatus] : []), ...legacy]),
+    ...new Set(written.map(canonicalStatus).filter((value): value is IssueStatus => !!value)),
   ]
   return {
-    value: values.length === 1 ? values[0] : undefined,
-    conflict: values.length > 1,
+    // An unrecognised Status label is a conflict, never a silent Backlog.
+    value: values.length === 1 && unknown.length === 0 ? values[0] : undefined,
+    conflict: values.length > 1 || unknown.length > 0,
     labels: values,
+    unknown,
   }
 }
 
@@ -68,6 +88,7 @@ export const readIssueProperties = (issue: Pick<ProviderIssue, 'labels' | 'state
     priority: priority.value as IssuePriority | undefined,
     conflicts: { status: status.conflict, priority: priority.conflict },
     statusLabels: status.labels,
+    unknownStatusLabels: status.unknown,
     priorityLabels: priority.labels,
   }
 }

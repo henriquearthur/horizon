@@ -3,7 +3,9 @@ import {
   callWriteTool,
   readTools,
   allTools,
+  SESSION_HEADERS,
   type ReadContext,
+  type SessionMetadata,
   type WriteContext,
 } from '../../../../packages/mcp/src/index.ts'
 import type { ProviderReadContract, ProviderWriteContract } from '@horizon/domain'
@@ -28,9 +30,6 @@ type RequestMeta = {
   'io.modelcontextprotocol/clientInfo'?: unknown
 }
 
-const standardProtocolVersion = (body: Rpc): unknown =>
-  body.params?.protocolVersion ?? (body.params?._meta as RequestMeta | undefined)?.['io.modelcontextprotocol/protocolVersion']
-
 /** Stateless Streamable HTTP MCP endpoint for protocol revision 2026-07-28. */
 export const mcpHandler = async (request: Request): Promise<Response> => {
   if (!hasValidOrigin(request)) return rpcError(null, -32600, 'Invalid Origin', 403)
@@ -54,19 +53,11 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
   if (headerError) return rpcError(id, -32020, headerError)
 
   const meta = body.params?._meta as RequestMeta | undefined
-  const requestedVersion = standardProtocolVersion(body)
-  if (
-    body.method !== 'initialize' &&
-    requestedVersion !== protocolVersion &&
-    !(typeof requestedVersion === 'string' && /^2025-/.test(requestedVersion))
-  )
-    return rpcError(id, -32022, 'Unsupported protocol version', 400, {
-      supported: [protocolVersion],
-      requested: requestedVersion,
-    })
-  const capabilities = body.params?.capabilities ?? meta?.['io.modelcontextprotocol/clientCapabilities']
-  if (!isRecord(capabilities))
-    return rpcError(id, -32602, 'Client capabilities are required')
+  // The endpoint is stateless and its responses do not vary by revision, so a
+  // client advertising another one is served instead of turned away.
+  const capabilities =
+    body.params?.capabilities ?? meta?.['io.modelcontextprotocol/clientCapabilities']
+  if (!isRecord(capabilities)) return rpcError(id, -32602, 'Client capabilities are required')
   const clientInfo = body.params?.clientInfo ?? meta?.['io.modelcontextprotocol/clientInfo']
   if (
     clientInfo !== undefined &&
@@ -122,7 +113,11 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
           },
         },
       ) as ProviderReadContract & ProviderWriteContract
-      const context: ReadContext & WriteContext = { provider, scope }
+      const context: ReadContext & WriteContext = {
+        provider,
+        scope,
+        session: sessionMetadata(request.headers, clientInfo),
+      }
       const result = readTools().some((tool) => tool.name === name)
         ? await callReadTool(context, name, args)
         : await callWriteTool(context, name, args)
@@ -196,6 +191,23 @@ const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | un
     const headerName = decodeHeader(requestHeaders.get('mcp-name'))
     if (typeof name !== 'string' || (headerName && headerName !== name))
       return 'Mcp-Name header is missing, malformed, or does not match the tool name'
+  }
+}
+/**
+ * Agent identification negotiated once per connection, so every write does not
+ * have to repeat it. Tool arguments still override these defaults.
+ */
+const sessionMetadata = (requestHeaders: Headers, clientInfo: unknown): SessionMetadata => {
+  const read = (name: string) => decodeHeader(requestHeaders.get(name))?.trim() || undefined
+  const model = read(SESSION_HEADERS.model)
+  const harness =
+    read(SESSION_HEADERS.harness) ??
+    (isRecord(clientInfo) && typeof clientInfo.name === 'string' ? clientInfo.name : undefined)
+  const session = read(SESSION_HEADERS.session_id)
+  return {
+    ...(model ? { model } : {}),
+    ...(harness ? { harness } : {}),
+    ...(session ? { session_id: session } : {}),
   }
 }
 const jsonSafe = (value: unknown): unknown => {

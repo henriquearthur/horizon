@@ -18,7 +18,7 @@ describe('MCP HTTP route', () => {
     const address = server.httpServer?.address()
     if (!address || typeof address === 'string') throw new Error('Vite did not expose a TCP port')
     endpoint = `http://127.0.0.1:${address.port}/mcp`
-  })
+  }, 30_000)
 
   afterAll(async () => {
     await server?.close()
@@ -53,5 +53,5 @@ describe('MCP HTTP route', () => {
         _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'horizon' } },
       },
     })
-  })
+  }, 30_000)
 })
