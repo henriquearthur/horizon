@@ -13,7 +13,12 @@ import { reader, providerSnapshot } from './gitlab'
 import { runtime } from './runtime'
 import { scopeStore } from './scope-store'
 
-const protocolVersion = '2026-07-28'
+// 2025-03-26 is the Streamable HTTP revision supported by Codex and Claude
+// Code. Keep the newer Horizon experiment below as a backwards-compatible
+// dialect for clients that already use it.
+const protocolVersion = '2025-03-26'
+const compatibleProtocolVersions = new Set([protocolVersion, '2025-06-18'])
+const legacyProtocolVersion = '2026-07-28'
 const serverInfo = { name: 'horizon', version: '0.0.0' }
 const resultMeta = { 'io.modelcontextprotocol/serverInfo': serverInfo }
 
@@ -30,11 +35,18 @@ type RequestMeta = {
   'io.modelcontextprotocol/clientInfo'?: unknown
 }
 
-/** Stateless Streamable HTTP MCP endpoint for protocol revision 2026-07-28. */
+const sessions = new Map<string, SessionMetadata>()
+
+/** MCP Streamable HTTP endpoint (stateful handshake, stateless tool execution). */
 export const mcpHandler = async (request: Request): Promise<Response> => {
   if (!hasValidOrigin(request)) return rpcError(null, -32600, 'Invalid Origin', 403)
+  const requestSession = request.headers.get('mcp-session-id')
+  if (request.method === 'DELETE') {
+    if (requestSession) sessions.delete(requestSession)
+    return new Response(null, { status: 204 })
+  }
   if (request.method !== 'POST')
-    return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } })
+    return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST, DELETE' } })
 
   let parsed: unknown
   try {
@@ -49,15 +61,16 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
   if (body.jsonrpc !== '2.0' || typeof body.method !== 'string')
     return rpcError(id, -32600, 'Invalid Request')
 
-  const headerError = validateRequestHeaders(request.headers, body)
-  if (headerError) return rpcError(id, -32020, headerError)
-
   const meta = body.params?._meta as RequestMeta | undefined
-  // The endpoint is stateless and its responses do not vary by revision, so a
-  // client advertising another one is served instead of turned away.
-  const capabilities =
-    body.params?.capabilities ?? meta?.['io.modelcontextprotocol/clientCapabilities']
-  if (!isRecord(capabilities)) return rpcError(id, -32602, 'Client capabilities are required')
+  const legacy = isRecord(body.params?._meta) &&
+    meta?.['io.modelcontextprotocol/protocolVersion'] !== undefined
+  if (legacy) {
+    const headerError = validateRequestHeaders(request.headers, body)
+    if (headerError) return rpcError(id, -32020, headerError)
+  }
+  const capabilities = body.params?.capabilities ?? meta?.['io.modelcontextprotocol/clientCapabilities']
+  if (body.method === 'initialize' && !isRecord(capabilities))
+    return rpcError(id, -32602, 'Client capabilities are required')
   const clientInfo = body.params?.clientInfo ?? meta?.['io.modelcontextprotocol/clientInfo']
   if (
     clientInfo !== undefined &&
@@ -68,25 +81,18 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
     return rpcError(id, -32602, 'Client info must include a name and version')
 
   try {
-    if (body.method === 'server/discover')
+    if (legacy && body.method === 'server/discover')
       return rpcResult(
         id,
         completeResult({
-          supportedVersions: [protocolVersion],
+          supportedVersions: [legacyProtocolVersion],
           capabilities: { tools: {} },
           ttlMs: 3_600_000,
           cacheScope: 'public',
         }),
       )
     if (body.method === 'tools/list')
-      return rpcResult(
-        id,
-        completeResult({
-          tools: allTools(),
-          ttlMs: 3_600_000,
-          cacheScope: 'public',
-        }),
-      )
+      return rpcResult(id, legacy ? completeResult({ tools: allTools(), ttlMs: 3_600_000, cacheScope: 'public' }) : { tools: allTools() })
     if (body.method === 'tools/call') {
       const name = body.params?.name
       if (typeof name !== 'string') return rpcError(id, -32602, 'name is required')
@@ -113,40 +119,47 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
           },
         },
       ) as ProviderReadContract & ProviderWriteContract
+      const sessionId = requestSession ?? undefined
       const context: ReadContext & WriteContext = {
         provider,
         scope,
-        session: sessionMetadata(request.headers, clientInfo),
+        session: sessionMetadata(request.headers, clientInfo, sessionId ? sessions.get(sessionId) : undefined),
       }
       const result = readTools().some((tool) => tool.name === name)
         ? await callReadTool(context, name, args)
         : await callWriteTool(context, name, args)
-      return rpcResult(
-        id,
-        completeResult({
+      const resultPayload = {
           content: [{ type: 'text', text: JSON.stringify(result) }],
           structuredContent: result,
-        }),
-      )
+        }
+      return rpcResult(id, legacy ? completeResult(resultPayload) : resultPayload)
     }
-    if (body.method === 'initialize')
-      return rpcResult(id, {
-        protocolVersion,
-        capabilities: { tools: {} },
-        serverInfo,
-      })
+    if (body.method === 'initialize') {
+      if (legacy)
+        return rpcResult(id, {
+          protocolVersion: legacyProtocolVersion,
+          capabilities: { tools: {} },
+          serverInfo,
+        })
+      const requested = body.params?.protocolVersion
+      if (typeof requested !== 'string') return rpcError(id, -32602, 'protocolVersion is required')
+      const negotiated = compatibleProtocolVersions.has(requested) ? requested : protocolVersion
+      const sessionId = crypto.randomUUID()
+      sessions.set(sessionId, sessionMetadata(request.headers, clientInfo))
+      return rpcResultWithHeaders(id, { protocolVersion: negotiated, capabilities: { tools: {} }, serverInfo }, { 'Mcp-Session-Id': sessionId })
+    }
+    if (body.method === 'notifications/initialized' || body.method === 'notifications/cancelled')
+      return new Response(null, { status: 202 })
     const message = 'Method not found'
-    return rpcError(id, -32601, message, 404)
+    return rpcError(id, -32601, message, legacy ? 404 : 200)
   } catch (error) {
     const e = error as { code?: string; message?: string; details?: unknown }
-    return rpcResult(
-      id,
-      completeResult({
-        isError: true,
-        content: [{ type: 'text', text: e.message ?? 'Tool error' }],
-        structuredContent: { code: e.code, details: e.details },
-      }),
-    )
+    const errorResult = {
+      isError: true,
+      content: [{ type: 'text', text: e.message ?? 'Tool error' }],
+      structuredContent: { code: e.code, details: e.details },
+    }
+    return rpcResult(id, legacy ? completeResult(errorResult) : errorResult)
   }
 }
 
@@ -178,12 +191,12 @@ const decodeHeader = (value: string | null): string | null => {
 }
 const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | undefined => {
   const meta = body.params?._meta as RequestMeta | undefined
-  const bodyVersion = standardProtocolVersion(body)
+  const bodyVersion = meta?.['io.modelcontextprotocol/protocolVersion']
   const headerVersion = requestHeaders.get('mcp-protocol-version')
   const legacyRequest = isRecord(body.params?._meta)
   if (
     legacyRequest &&
-    (!headerVersion || headerVersion !== bodyVersion)
+    (typeof bodyVersion !== 'string' || !headerVersion || headerVersion !== bodyVersion)
   )
     return 'MCP-Protocol-Version header is missing or does not match request metadata'
 
@@ -202,13 +215,17 @@ const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | un
  * Agent identification negotiated once per connection, so every write does not
  * have to repeat it. Tool arguments still override these defaults.
  */
-const sessionMetadata = (requestHeaders: Headers, clientInfo: unknown): SessionMetadata => {
+const sessionMetadata = (
+  requestHeaders: Headers,
+  clientInfo: unknown,
+  negotiated: SessionMetadata | undefined = undefined,
+): SessionMetadata => {
   const read = (name: string) => decodeHeader(requestHeaders.get(name))?.trim() || undefined
-  const model = read(SESSION_HEADERS.model)
+  const model = read(SESSION_HEADERS.model) ?? negotiated?.model
   const harness =
     read(SESSION_HEADERS.harness) ??
-    (isRecord(clientInfo) && typeof clientInfo.name === 'string' ? clientInfo.name : undefined)
-  const session = read(SESSION_HEADERS.session_id)
+    (isRecord(clientInfo) && typeof clientInfo.name === 'string' ? clientInfo.name : undefined) ?? negotiated?.harness
+  const session = read(SESSION_HEADERS.session_id) ?? negotiated?.session_id
   return {
     ...(model ? { model } : {}),
     ...(harness ? { harness } : {}),
@@ -227,6 +244,10 @@ const jsonSafe = (value: unknown): unknown => {
 }
 const rpcResult = (id: Rpc['id'], result: unknown) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', id, result: jsonSafe(result) }), { headers })
+const rpcResultWithHeaders = (id: Rpc['id'], result: unknown, extra: Record<string, string>) =>
+  new Response(JSON.stringify({ jsonrpc: '2.0', id, result: jsonSafe(result) }), {
+    headers: { ...headers, ...extra },
+  })
 const rpcError = (id: Rpc['id'], code: number, message: string, status = 400, data?: unknown) =>
   new Response(
     JSON.stringify({

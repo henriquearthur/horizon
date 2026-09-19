@@ -131,3 +131,44 @@ describe('MCP 2026-07-28 stateless Streamable HTTP contract', () => {
     ).toBe(400)
   })
 })
+
+describe('MCP standard Streamable HTTP contract', () => {
+  it('negotiates a session and serves Codex-style requests', async () => {
+    const initialize = await mcpHandler(
+      new Request('http://x/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            clientInfo: { name: 'codex', version: '1.0.0' },
+          },
+        }),
+      }),
+    )
+    expect(initialize.status).toBe(200)
+    const session = initialize.headers.get('mcp-session-id')
+    expect(session).toBeTruthy()
+    await expect(initialize.json()).resolves.toMatchObject({
+      result: { protocolVersion: '2025-03-26', capabilities: { tools: {} } },
+    })
+
+    const list = await mcpHandler(
+      new Request('http://x/mcp', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-03-26',
+          'mcp-session-id': session!,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      }),
+    )
+    await expect(list.json()).resolves.toMatchObject({ result: { tools: expect.any(Array) } })
+  })
+})
