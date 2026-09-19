@@ -13,7 +13,7 @@ import {
   Scripts,
   useRouterState,
 } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AppHeader } from '~/components/shell/app-header'
 import { AppSidebar, type SidebarItem } from '~/components/shell/app-sidebar'
 import { ScopeDialog } from '~/components/setup/scope-dialog'
@@ -121,14 +121,20 @@ function AppShell({ children }: { children: ReactNode }) {
   }, [scopeEmpty])
   const scopeKey = runtime.snapshot ? JSON.stringify(runtime.snapshot.scope) : undefined
   const savedViews = useSavedViews(scopeKey)
-  const issueInitiativeIds = (runtime.snapshot?.issues ?? []).flatMap((issue) =>
-    initiativeIdsFromLabels(issue.labels),
+  const issueInitiativeIds = useMemo(
+    () =>
+      (runtime.snapshot?.issues ?? []).flatMap((issue) => initiativeIdsFromLabels(issue.labels)),
+    [runtime.snapshot?.issues],
   )
   const initiatives = useInitiatives(issueInitiativeIds)
-  const scopeTree = buildScopeTree(
-    runtime.snapshot?.groups ?? [],
-    runtime.snapshot?.projects ?? [],
-    runtime.snapshot?.issues ?? [],
+  const scopeTree = useMemo(
+    () =>
+      buildScopeTree(
+        runtime.snapshot?.groups ?? [],
+        runtime.snapshot?.projects ?? [],
+        runtime.snapshot?.issues ?? [],
+      ),
+    [runtime.snapshot?.groups, runtime.snapshot?.projects, runtime.snapshot?.issues],
   )
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">

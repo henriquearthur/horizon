@@ -1,5 +1,5 @@
 import type { Initiative } from '@horizon/domain'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 /**
  * The Projeto catalog is Horizon-owned data, kept next to the saved Views.
@@ -57,9 +57,11 @@ export function useInitiatives(discoveredIds: readonly string[] = []): readonly 
       globalThis.removeEventListener('horizon:initiatives', refresh)
     }
   }, [])
-  const known = new Set(stored.map((initiative) => initiative.id))
-  return [
-    ...stored,
-    ...discoveredIds.filter((id) => !known.has(id)).map(discoveredInitiative),
-  ].sort((left, right) => left.name.localeCompare(right.name))
+  return useMemo(() => {
+    const known = new Set(stored.map((initiative) => initiative.id))
+    return [
+      ...stored,
+      ...[...new Set(discoveredIds)].filter((id) => !known.has(id)).map(discoveredInitiative),
+    ].sort((left, right) => left.name.localeCompare(right.name))
+  }, [stored, discoveredIds])
 }

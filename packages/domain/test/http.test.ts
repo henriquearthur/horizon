@@ -79,3 +79,30 @@ describe('GitLabHttp', () => {
     expect(nextPageOf(json([]))).toBeUndefined()
   })
 })
+
+it('serves interactive reads before queued background pages without exceeding the host limit', async () => {
+  resetGitLabGates()
+  const releases: (() => void)[] = []
+  const order: string[] = []
+  const fetcher = vi.fn<typeof fetch>(
+    (url) =>
+      new Promise<Response>((resolve) => {
+        order.push(new URL(String(url)).pathname)
+        releases.push(() => resolve(json({})))
+      }),
+  )
+  const background = http(fetcher, { maxConcurrency: 1 })
+  const interactive = http(fetcher, { maxConcurrency: 1, priority: 'interactive' })
+  const first = background.json(background.url('first'))
+  await vi.waitFor(() => expect(order).toHaveLength(1))
+  const second = background.json(background.url('background'))
+  const click = interactive.json(interactive.url('click'))
+  releases.shift()!()
+  await vi.waitFor(() => expect(order).toHaveLength(2))
+  expect(order[1]).toBe('/api/v4/click')
+  releases.shift()!()
+  await vi.waitFor(() => expect(order).toHaveLength(3))
+  releases.shift()!()
+  await Promise.all([first, second, click])
+  resetGitLabGates()
+})

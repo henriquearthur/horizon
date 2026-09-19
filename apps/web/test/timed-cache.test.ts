@@ -42,3 +42,24 @@ describe('TimedCache', () => {
     await expect(cache.get()).rejects.toThrow('sem conexão')
   })
 })
+
+it('patches a confirmed write without reloading or accepting an older in-flight result', async () => {
+  let resolve!: (value: string[]) => void
+  const load = vi
+    .fn<() => Promise<string[]>>()
+    .mockResolvedValueOnce(['old'])
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+  const cache = new TimedCache(60_000, load)
+  await cache.get()
+  const refreshing = cache.get({ force: true })
+  cache.update(() => ['confirmed'])
+  resolve(['old'])
+  expect(await refreshing).toEqual(['confirmed'])
+  expect(await cache.get()).toEqual(['confirmed'])
+  expect(load).toHaveBeenCalledTimes(2)
+})

@@ -7,11 +7,16 @@ export interface ScopeTree {
   readonly standaloneProjects: readonly SidebarItem[]
 }
 
-/** The group a path belongs under: the longest group path that is a prefix of it. */
-const parentOf = (path: string, paths: readonly string[]): string | undefined =>
-  paths
-    .filter((candidate) => candidate !== path && path.startsWith(`${candidate}/`))
-    .sort((left, right) => right.length - left.length)[0]
+/** Find an ancestor by walking path segments instead of scanning every group. */
+const ownerOf = (path: string | undefined, paths: ReadonlySet<string>): string | undefined => {
+  while (path) {
+    if (paths.has(path)) return path
+    const slash = path.lastIndexOf('/')
+    if (slash < 0) break
+    path = path.slice(0, slash)
+  }
+  return undefined
+}
 
 /**
  * Turns the flat Escopo into the tree the sidebar shows: groups nest under
@@ -23,39 +28,38 @@ export const buildScopeTree = (
   projects: readonly ProviderProject[],
   issues: readonly ProviderIssue[],
 ): ScopeTree => {
-  const paths = groups.map((group) => group.fullPath)
+  const paths = new Set(groups.map((group) => group.fullPath))
+  const groupsByParent = new Map<string | undefined, ProviderGroup[]>()
+  for (const group of groups) {
+    const slash = group.fullPath.lastIndexOf('/')
+    const parent = slash < 0 ? undefined : ownerOf(group.fullPath.slice(0, slash), paths)
+    const siblings = groupsByParent.get(parent)
+    if (siblings) siblings.push(group)
+    else groupsByParent.set(parent, [group])
+  }
   const issuesByProject = new Map<number, number>()
   for (const issue of issues.filter((item) => isIssueVisible(item)))
     issuesByProject.set(issue.projectId, (issuesByProject.get(issue.projectId) ?? 0) + 1)
 
-  /** The deepest group in the Escopo that contains the project. */
-  const ownerOf = (groupPath: string | undefined): string | undefined =>
-    groupPath === undefined
-      ? undefined
-      : paths
-          .filter((path) => path === groupPath || groupPath.startsWith(`${path}/`))
-          .sort((left, right) => right.length - left.length)[0]
-
   const projectsByGroup = new Map<string, SidebarItem[]>()
   const projectCountByGroup = new Map<string, number>()
   for (const project of projects) {
-    const owner = ownerOf(project.groupPath ?? project.namespace)
+    const owner = ownerOf(project.groupPath ?? project.namespace, paths)
     const target = owner ?? `__standalone__`
     const count = issuesByProject.get(project.id) ?? 0
-    projectsByGroup.set(target, [
-      ...(projectsByGroup.get(target) ?? []),
-      {
-        viewParam: viewRefToParam(projectViewRef(`${project.namespace}/${project.path}`)),
-        label: project.path,
-        count: String(count),
-      },
-    ])
+    const item = {
+      viewParam: viewRefToParam(projectViewRef(`${project.namespace}/${project.path}`)),
+      label: project.path,
+      count: String(count),
+    }
+    const siblings = projectsByGroup.get(target)
+    if (siblings) siblings.push(item)
+    else projectsByGroup.set(target, [item])
     projectCountByGroup.set(target, (projectCountByGroup.get(target) ?? 0) + count)
   }
 
   const childrenOf = (path: string | undefined): readonly SidebarGroupItem[] =>
-    groups
-      .filter((group) => parentOf(group.fullPath, paths) === path)
+    (groupsByParent.get(path) ?? [])
       .sort((left, right) => left.fullPath.localeCompare(right.fullPath))
       .map((group) => {
         const children = childrenOf(group.fullPath)

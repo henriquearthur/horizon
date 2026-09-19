@@ -11,7 +11,7 @@ vi.mock('../src/server/gitlab', () => {
     searchDiscussions: async () => [],
     listViews: async () => [{ id: 'general', title: 'General', builtin: true }],
   }
-  return { reader: () => p, writer: () => ({}) }
+  return { reader: () => p, writer: () => ({}), providerSnapshot: p.readScope }
 })
 vi.mock('../src/server/scope-store', () => ({
   scopeStore: { getScope: async () => ({ groups: [], projects: [], followGroups: [] }) },

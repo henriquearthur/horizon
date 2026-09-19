@@ -22,6 +22,8 @@ export class GitLabHttpError extends Error {
 }
 
 export interface GitLabHttpOptions {
+  /** Interactive work goes ahead of queued snapshot pages on the same host. */
+  readonly priority?: 'background' | 'interactive'
   readonly maxRetries?: number
   readonly retryDelayMs?: number
   readonly timeoutMs?: number
@@ -32,6 +34,7 @@ export interface GitLabHttpOptions {
 }
 
 const DEFAULTS = {
+  priority: 'background',
   maxRetries: 3,
   retryDelayMs: 700,
   timeoutMs: 20_000,
@@ -46,6 +49,8 @@ const sleep = (ms: number): Promise<void> =>
 class HostGate {
   #active = 0
   #waiting: (() => void)[] = []
+  #interactive: (() => void)[] = []
+  #interactiveBurst = 0
   #nextSlot = 0
 
   constructor(
@@ -62,11 +67,25 @@ class HostGate {
   relax(limit: number, spacing: number): void {
     this.limit = Math.max(this.limit, limit)
     this.spacing = Math.min(this.spacing, spacing)
+    this.#drain()
   }
 
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    if (this.#active >= this.limit) await new Promise<void>((resume) => this.#waiting.push(resume))
-    this.#active += 1
+  #drain(): void {
+    while (this.#active < this.limit && (this.#interactive.length || this.#waiting.length)) {
+      const foreground =
+        this.#interactive.length && (this.#interactiveBurst < 8 || !this.#waiting.length)
+      const resume = (foreground ? this.#interactive : this.#waiting).shift()!
+      this.#interactiveBurst = foreground ? this.#interactiveBurst + 1 : 0
+      this.#active += 1
+      resume()
+    }
+  }
+
+  async run<T>(task: () => Promise<T>, priority: 'background' | 'interactive'): Promise<T> {
+    await new Promise<void>((resume) => {
+      ;(priority === 'interactive' ? this.#interactive : this.#waiting).push(resume)
+      this.#drain()
+    })
     try {
       const now = Date.now()
       const slot = Math.max(now, this.#nextSlot)
@@ -75,7 +94,7 @@ class HostGate {
       return await task()
     } finally {
       this.#active -= 1
-      this.#waiting.shift()?.()
+      this.#drain()
     }
   }
 
@@ -210,7 +229,7 @@ export class GitLabHttp {
             'Não foi possível conectar ao GitLab.',
           )
         }
-      })
+      }, this.#options.priority)
 
       if (response instanceof GitLabHttpError) {
         lastError = response

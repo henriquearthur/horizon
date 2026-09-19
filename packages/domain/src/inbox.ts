@@ -21,13 +21,14 @@ export const filterIssues = (
   issues: readonly ProviderIssue[],
   filters: InboxFilters = {},
   projects: readonly ProviderProject[] = [],
-): readonly ProviderIssue[] =>
-  issues.filter(
+): readonly ProviderIssue[] => {
+  const projectById = new Map(projects.map((project) => [project.id, project]))
+  return issues.filter(
     (i) =>
       (!filters.projectIds?.length || filters.projectIds.includes(i.projectId)) &&
       (!filters.groupPaths?.length ||
         filters.groupPaths.some((group) => {
-          const project = projects.find((candidate) => candidate.id === i.projectId)
+          const project = projectById.get(i.projectId)
           const path = project?.groupPath ?? project?.namespace
           return path === group || path?.startsWith(`${group}/`)
         })) &&
@@ -38,6 +39,7 @@ export const filterIssues = (
       (!filters.priority || readIssueProperties(i).priority === filters.priority) &&
       (!filters.hideCompleted || readIssueProperties(i).status !== 'Concluído'),
   )
+}
 
 export const searchIssues = (
   issues: readonly ProviderIssue[],
@@ -101,7 +103,11 @@ export const groupIssues = (
                 : commonLabels.length
                   ? commonLabels
                   : ['Sem label']
-    for (const k of keys) out.set(k, [...(out.get(k) ?? []), i])
+    for (const k of keys) {
+      const bucket = out.get(k)
+      if (bucket) bucket.push(i)
+      else out.set(k, [i])
+    }
   }
   return out
 }

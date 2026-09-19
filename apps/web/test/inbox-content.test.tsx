@@ -97,6 +97,24 @@ describe('InboxContent', () => {
     expect(updateIssueProperties).toHaveBeenCalledTimes(2)
   })
 
+  it('opens usable details while discussion requests are still pending', async () => {
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="kanban"
+        query=""
+        refresh={vi.fn()}
+        refreshing={false}
+        provider={{ listComments: () => new Promise(() => {}) } as never}
+      />,
+    )
+    await userEvent.click(screen.getByText('Backlog issue'))
+    expect(screen.getByLabelText('Detalhes do issue')).toHaveAttribute('aria-busy', 'false')
+    expect(screen.queryByLabelText('Carregando')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar' })).toBeEnabled()
+  })
+
   it('names timestamp sort options explicitly', async () => {
     render(
       <InboxContent
@@ -419,4 +437,34 @@ describe('InboxContent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Atribuir a mim' }))
     expect(await screen.findByLabelText('Detalhes do issue')).toBeInTheDocument()
   })
+})
+
+it('keeps merge request reads stable when only the issue status changes', async () => {
+  const provider = {
+    listComments: vi.fn().mockResolvedValue([]),
+    listMergeRequests: vi.fn().mockResolvedValue([]),
+  }
+  const props = {
+    snapshot,
+    view: { _tag: 'Builtin', id: 'general' },
+    mode: 'list',
+    query: '',
+    issueRef: '1:1',
+    provider,
+    refresh: vi.fn(),
+    refreshing: false,
+  } as const
+  const { rerender } = render(<InboxContent {...props} provider={provider as never} />)
+  await waitFor(() => expect(provider.listMergeRequests).toHaveBeenCalledTimes(1))
+  rerender(
+    <InboxContent
+      {...props}
+      provider={provider as never}
+      snapshot={{
+        ...snapshot,
+        issues: [{ ...snapshot.issues[0]!, labels: ['horizon::status::Em andamento'] }],
+      }}
+    />,
+  )
+  expect(provider.listMergeRequests).toHaveBeenCalledTimes(1)
 })

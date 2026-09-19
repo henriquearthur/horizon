@@ -45,6 +45,13 @@ export class TimedCache<T> {
     return this.#value?.data
   }
 
+  /** Patch a confirmed write and fence out reads started before it. */
+  update(change: (current: T) => T): void {
+    this.#generation += 1
+    this.#inFlight = undefined
+    if (this.#value) this.#value = { ...this.#value, data: change(this.#value.data) }
+  }
+
   invalidate(): void {
     this.#generation += 1
     this.#inFlight = undefined
