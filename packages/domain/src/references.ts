@@ -40,9 +40,10 @@ export const resolveIssueReference = (
   if (!Number.isInteger(iid) || iid <= 0) return { kind: 'not-found', reference }
   const candidates = selected.filter((project) => {
     const fullPath = `${project.namespace}/${project.path}`
-    return hash >= 0
-      ? fullPath === path
-      : friendlyIssueId(project, iid).toLowerCase() === input.toLowerCase()
+    // `123#4` is the reference shape the Provider ids produce; both it and the
+    // canonical `namespace/path#iid` must reach the same Issue.
+    if (hash >= 0) return /^\d+$/.test(path) ? project.id === Number(path) : fullPath === path
+    return friendlyIssueId(project, iid).toLowerCase() === input.toLowerCase()
   })
   const matches = candidates.filter((project) =>
     issues.some((issue) => issue.projectId === project.id && issue.iid === iid),

@@ -64,12 +64,28 @@ O agente chamador usa a skill externa do usuário em
 nem executa essa skill: a ferramenta MCP recebe seu resultado e registra o
 handoff.
 
+## Catálogo publicado
+
+O catálogo só anuncia ferramentas implementadas: uma ferramenta que falha
+sempre custa mais ao agente do que a sua ausência. Views salvas e Sub-issues
+seguem previstas nesta decisão, mas `list_views` e `create_sub_issue` saem do
+catálogo até existir implementação.
+
+Cada ferramenta declara no `inputSchema` todos os parâmetros que aceita, com
+enum nos valores canônicos, e um argumento não declarado é `validation_error`
+com a lista aceita — nunca um filtro silenciosamente ignorado. As leituras de
+coleção devolvem resumos paginados; a descrição das Issues só vem quando
+pedida.
+
 ## Identificação nos comentários
 
 Toda ferramenta MCP que cria comentários, inclusive a ferramenta genérica,
-exige os campos estruturados `model`, `harness` e `session_id`. O servidor
-valida os campos e acrescenta uma citação Markdown de no máximo duas linhas
-no texto-fonte, seguida do corpo. Exemplo:
+exige os campos estruturados `model`, `harness` e `session_id`. Eles são
+negociados uma vez por conexão, nos cabeçalhos `X-Horizon-Model`,
+`X-Horizon-Harness` e `Mcp-Session-Id` — o `clientInfo` do MCP serve de
+`harness` padrão —, e os argumentos de mesmo nome continuam disponíveis como
+override por chamada. O servidor valida os campos e acrescenta uma citação
+Markdown de no máximo duas linhas no texto-fonte, seguida do corpo. Exemplo:
 
 ```markdown
 > **Model:** `gpt-6` · **Harness:** `Codex` · **Session:** `abc123`
