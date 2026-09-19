@@ -402,6 +402,7 @@ export const IssueViews = memo(function IssueViews({
   const [dragOver, setDragOver] = useState<string>()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [collapsedParents, setCollapsedParents] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedRepositories, setCollapsedRepositories] = useState<ReadonlySet<string>>(new Set())
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
@@ -423,6 +424,15 @@ export const IssueViews = memo(function IssueViews({
   const toggleCollapsed = useCallback(
     (key: string) =>
       setCollapsedParents((current) => {
+        const next = new Set(current)
+        if (!next.delete(key)) next.add(key)
+        return next
+      }),
+    [],
+  )
+  const toggleRepository = useCallback(
+    (key: string) =>
+      setCollapsedRepositories((current) => {
         const next = new Set(current)
         if (!next.delete(key)) next.add(key)
         return next
@@ -456,6 +466,21 @@ export const IssueViews = memo(function IssueViews({
         {lanes.map(([projectId, laneIssues]) => (
           <section key={projectId} className="mb-7 last:mb-0">
             <header className="mb-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleRepository(String(projectId))}
+                aria-expanded={!collapsedRepositories.has(String(projectId))}
+                aria-label={`${collapsedRepositories.has(String(projectId)) ? 'Expandir' : 'Recolher'} ${projectPath(projectById.get(projectId), projectId)}`}
+                className="flex size-5 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+              >
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    'size-3.5 transition-transform duration-150',
+                    collapsedRepositories.has(String(projectId)) && '-rotate-90',
+                  )}
+                />
+              </button>
               <h2 className="font-mono text-[11.5px] font-semibold tracking-tight text-foreground">
                 {projectPath(projectById.get(projectId), projectId)}
               </h2>
@@ -464,114 +489,116 @@ export const IssueViews = memo(function IssueViews({
               </span>
               <span className="h-px flex-1 bg-border" />
             </header>
-            <div className="flex items-start gap-4">
-              {STATUS_VALUES.map((status) => {
-                const cards = laneIssues.filter(
-                  (issue) => readIssueProperties(issue).status === status,
-                )
-                const dropKey = `${projectId}:${status}`
-                const over = dragOver === dropKey
-                return (
-                  <section
-                    key={status}
-                    aria-label={`${projectPath(projectById.get(projectId), projectId)} · ${status}`}
-                    onDragOver={(event) => {
-                      if (!canDrag || dragging === undefined) return
-                      event.preventDefault()
-                      event.dataTransfer.dropEffect = 'move'
-                      if (!over) setDragOver(dropKey)
-                    }}
-                    onDragLeave={(event) => {
-                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
-                      if (over) setDragOver(undefined)
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault()
-                      const dropped = issues.find((issue) => issue.id === dragging)
-                      setDragging(undefined)
-                      setDragOver(undefined)
-                      if (dropped && readIssueProperties(dropped).status !== status)
-                        onStatusChange?.(dropped, status)
-                    }}
-                    className={cn(
-                      'flex min-w-[250px] flex-1 flex-col gap-2.5 rounded-2xl border border-dashed p-2.5 transition-colors duration-200',
-                      over
-                        ? 'border-primary bg-accent/60'
-                        : 'border-transparent bg-muted/60 dark:bg-muted/40',
-                    )}
-                  >
-                    <header className="flex items-center gap-2 px-1.5 py-0.5">
-                      <StatusDot status={status} />
-                      <h3 className="text-[12px] font-semibold text-foreground">{status}</h3>
-                      <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">
-                        {cards.length}
-                      </span>
-                    </header>
-                    {cards.map((issue) => (
-                      <div
-                        key={issue.id}
-                        style={{
-                          contentVisibility: 'auto',
-                          containIntrinsicSize: mode === 'kanban' ? 'auto 140px' : 'auto 65px',
-                        }}
-                      >
-                        <IssueCard
-                          issue={issue}
-                          path={pathFor(issue)}
-                          code={codeFor(issue)}
-                          selected={issue.id === selectedId}
-                          dragging={dragging === issue.id}
-                          draggable={canDrag}
-                          childCount={childrenFor(issue).length}
-                          doneChildren={doneCount(childrenFor(issue))}
-                          blocked={isBlocked(issue)}
-                          collapsed={collapsedParents.has(issueKey(issue))}
-                          onCollapse={toggleCollapsed}
-                          expanded={expanded.has(issueKey(issue))}
-                          onToggle={toggle}
-                          onOpen={onOpen}
-                          onDragStart={setDragging}
-                          onDragEnd={endDrag}
-                          onStatusChange={onStatusChange}
-                        />
-                        {childrenFor(issue).length && !collapsedParents.has(issueKey(issue)) ? (
-                          <div className="ml-3 space-y-2.5 border-l-2 border-muted-foreground/20 pt-3 pl-3">
-                            {childrenFor(issue).map((child) => (
-                              <IssueCard
-                                key={child.id}
-                                issue={child}
-                                path={pathFor(child)}
-                                code={codeFor(child)}
-                                selected={child.id === selectedId}
-                                dragging={dragging === child.id}
-                                draggable={canDrag}
-                                blocked={isBlocked(child)}
-                                onOpen={onOpen}
-                                onDragStart={setDragging}
-                                onDragEnd={endDrag}
-                                onStatusChange={onStatusChange}
-                              />
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                    {!cards.length && (
-                      <p
-                        className={cn(
-                          'rounded-xl border border-dashed px-2 py-5 text-center text-[11.5px] transition-colors',
-                          over
-                            ? 'border-primary text-primary'
-                            : 'border-border/70 text-muted-foreground',
-                        )}
-                      >
-                        {canDrag ? 'Arraste um issue para cá' : 'Nada aqui'}
-                      </p>
-                    )}
-                  </section>
-                )
-              })}
-            </div>
+            {!collapsedRepositories.has(String(projectId)) ? (
+              <div className="flex items-start gap-4">
+                {STATUS_VALUES.map((status) => {
+                  const cards = laneIssues.filter(
+                    (issue) => readIssueProperties(issue).status === status,
+                  )
+                  const dropKey = `${projectId}:${status}`
+                  const over = dragOver === dropKey
+                  return (
+                    <section
+                      key={status}
+                      aria-label={`${projectPath(projectById.get(projectId), projectId)} · ${status}`}
+                      onDragOver={(event) => {
+                        if (!canDrag || dragging === undefined) return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        if (!over) setDragOver(dropKey)
+                      }}
+                      onDragLeave={(event) => {
+                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                        if (over) setDragOver(undefined)
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        const dropped = issues.find((issue) => issue.id === dragging)
+                        setDragging(undefined)
+                        setDragOver(undefined)
+                        if (dropped && readIssueProperties(dropped).status !== status)
+                          onStatusChange?.(dropped, status)
+                      }}
+                      className={cn(
+                        'flex min-w-[250px] flex-1 flex-col gap-2.5 rounded-2xl border border-dashed p-2.5 transition-colors duration-200',
+                        over
+                          ? 'border-primary bg-accent/60'
+                          : 'border-transparent bg-muted/60 dark:bg-muted/40',
+                      )}
+                    >
+                      <header className="flex items-center gap-2 px-1.5 py-0.5">
+                        <StatusDot status={status} />
+                        <h3 className="text-[12px] font-semibold text-foreground">{status}</h3>
+                        <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">
+                          {cards.length}
+                        </span>
+                      </header>
+                      {cards.map((issue) => (
+                        <div
+                          key={issue.id}
+                          style={{
+                            contentVisibility: 'auto',
+                            containIntrinsicSize: mode === 'kanban' ? 'auto 140px' : 'auto 65px',
+                          }}
+                        >
+                          <IssueCard
+                            issue={issue}
+                            path={pathFor(issue)}
+                            code={codeFor(issue)}
+                            selected={issue.id === selectedId}
+                            dragging={dragging === issue.id}
+                            draggable={canDrag}
+                            childCount={childrenFor(issue).length}
+                            doneChildren={doneCount(childrenFor(issue))}
+                            blocked={isBlocked(issue)}
+                            collapsed={collapsedParents.has(issueKey(issue))}
+                            onCollapse={toggleCollapsed}
+                            expanded={expanded.has(issueKey(issue))}
+                            onToggle={toggle}
+                            onOpen={onOpen}
+                            onDragStart={setDragging}
+                            onDragEnd={endDrag}
+                            onStatusChange={onStatusChange}
+                          />
+                          {childrenFor(issue).length && !collapsedParents.has(issueKey(issue)) ? (
+                            <div className="ml-3 space-y-2.5 border-l-2 border-muted-foreground/20 pt-3 pl-3">
+                              {childrenFor(issue).map((child) => (
+                                <IssueCard
+                                  key={child.id}
+                                  issue={child}
+                                  path={pathFor(child)}
+                                  code={codeFor(child)}
+                                  selected={child.id === selectedId}
+                                  dragging={dragging === child.id}
+                                  draggable={canDrag}
+                                  blocked={isBlocked(child)}
+                                  onOpen={onOpen}
+                                  onDragStart={setDragging}
+                                  onDragEnd={endDrag}
+                                  onStatusChange={onStatusChange}
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                      {!cards.length && (
+                        <p
+                          className={cn(
+                            'rounded-xl border border-dashed px-2 py-5 text-center text-[11.5px] transition-colors',
+                            over
+                              ? 'border-primary text-primary'
+                              : 'border-border/70 text-muted-foreground',
+                          )}
+                        >
+                          {canDrag ? 'Arraste um issue para cá' : 'Nada aqui'}
+                        </p>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
+            ) : null}
           </section>
         ))}
         {!lanes.length ? (
@@ -625,6 +652,21 @@ export const IssueViews = memo(function IssueViews({
           <section key={name}>
             {name && name !== 'Todos' && (
               <header className="sticky top-0 z-10 -mx-2 mb-0.5 flex items-center gap-2 border-b bg-background/85 px-5 pt-3 pb-1.5 backdrop-blur-sm">
+                <button
+                  type="button"
+                  onClick={() => toggleRepository(`list:${name}`)}
+                  aria-expanded={!collapsedRepositories.has(`list:${name}`)}
+                  aria-label={`${collapsedRepositories.has(`list:${name}`) ? 'Expandir' : 'Recolher'} ${heading}`}
+                  className="flex size-5 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                >
+                  <ChevronDown
+                    aria-hidden
+                    className={cn(
+                      'size-3.5 transition-transform duration-150',
+                      collapsedRepositories.has(`list:${name}`) && '-rotate-90',
+                    )}
+                  />
+                </button>
                 <h2 className="font-mono text-[11px] font-semibold tracking-tight text-foreground">
                   {heading}
                 </h2>
@@ -633,7 +675,9 @@ export const IssueViews = memo(function IssueViews({
                 </span>
               </header>
             )}
-            <div className="pt-1">{items.map((issue) => renderRow(issue))}</div>
+            {!name || name === 'Todos' || !collapsedRepositories.has(`list:${name}`) ? (
+              <div className="pt-1">{items.map((issue) => renderRow(issue))}</div>
+            ) : null}
           </section>
         )
       })}
