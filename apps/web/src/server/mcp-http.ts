@@ -28,6 +28,9 @@ type RequestMeta = {
   'io.modelcontextprotocol/clientInfo'?: unknown
 }
 
+const standardProtocolVersion = (body: Rpc): unknown =>
+  body.params?.protocolVersion ?? (body.params?._meta as RequestMeta | undefined)?.['io.modelcontextprotocol/protocolVersion']
+
 /** Stateless Streamable HTTP MCP endpoint for protocol revision 2026-07-28. */
 export const mcpHandler = async (request: Request): Promise<Response> => {
   if (!hasValidOrigin(request)) return rpcError(null, -32600, 'Invalid Origin', 403)
@@ -51,15 +54,20 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
   if (headerError) return rpcError(id, -32020, headerError)
 
   const meta = body.params?._meta as RequestMeta | undefined
-  const requestedVersion = meta?.['io.modelcontextprotocol/protocolVersion']
-  if (requestedVersion !== protocolVersion)
+  const requestedVersion = standardProtocolVersion(body)
+  if (
+    body.method !== 'initialize' &&
+    requestedVersion !== protocolVersion &&
+    !(typeof requestedVersion === 'string' && /^2025-/.test(requestedVersion))
+  )
     return rpcError(id, -32022, 'Unsupported protocol version', 400, {
       supported: [protocolVersion],
       requested: requestedVersion,
     })
-  if (!isRecord(meta?.['io.modelcontextprotocol/clientCapabilities']))
+  const capabilities = body.params?.capabilities ?? meta?.['io.modelcontextprotocol/clientCapabilities']
+  if (!isRecord(capabilities))
     return rpcError(id, -32602, 'Client capabilities are required')
-  const clientInfo = meta?.['io.modelcontextprotocol/clientInfo']
+  const clientInfo = body.params?.clientInfo ?? meta?.['io.modelcontextprotocol/clientInfo']
   if (
     clientInfo !== undefined &&
     (!isRecord(clientInfo) ||
@@ -126,10 +134,13 @@ export const mcpHandler = async (request: Request): Promise<Response> => {
         }),
       )
     }
-    const message =
-      body.method === 'initialize'
-        ? `Method not found; supported protocol versions: ${protocolVersion}`
-        : 'Method not found'
+    if (body.method === 'initialize')
+      return rpcResult(id, {
+        protocolVersion,
+        capabilities: { tools: {} },
+        serverInfo,
+      })
+    const message = 'Method not found'
     return rpcError(id, -32601, message, 404)
   } catch (error) {
     const e = error as { code?: string; message?: string; details?: unknown }
@@ -172,19 +183,23 @@ const decodeHeader = (value: string | null): string | null => {
 }
 const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | undefined => {
   const meta = body.params?._meta as RequestMeta | undefined
-  const bodyVersion = meta?.['io.modelcontextprotocol/protocolVersion']
+  const bodyVersion = standardProtocolVersion(body)
   const headerVersion = requestHeaders.get('mcp-protocol-version')
-  if (!headerVersion || headerVersion !== bodyVersion)
+  const legacyRequest = isRecord(body.params?._meta)
+  if (
+    legacyRequest &&
+    (!headerVersion || headerVersion !== bodyVersion)
+  )
     return 'MCP-Protocol-Version header is missing or does not match request metadata'
 
   const headerMethod = requestHeaders.get('mcp-method')
-  if (!headerMethod || headerMethod !== body.method)
+  if ((legacyRequest && !headerMethod) || (headerMethod && headerMethod !== body.method))
     return 'Mcp-Method header is missing or does not match the request method'
 
   if (body.method === 'tools/call') {
     const name = body.params?.name
     const headerName = decodeHeader(requestHeaders.get('mcp-name'))
-    if (typeof name !== 'string' || headerName !== name)
+    if (typeof name !== 'string' || (legacyRequest && !headerName) || (headerName && headerName !== name))
       return 'Mcp-Name header is missing, malformed, or does not match the tool name'
   }
 }
