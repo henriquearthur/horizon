@@ -183,13 +183,9 @@ const decodeHeader = (value: string | null): string | null => {
 }
 const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | undefined => {
   const meta = body.params?._meta as RequestMeta | undefined
-  const bodyVersion = standardProtocolVersion(body)
-  const headerVersion = requestHeaders.get('mcp-protocol-version')
-  // Standard Streamable HTTP clients (including Codex) carry this metadata in
-  // the JSON body. The custom routing headers are accepted for legacy clients,
-  // but are optional for standard clients.
-  if (headerVersion && headerVersion !== bodyVersion)
-    return 'MCP-Protocol-Version header is missing or does not match request metadata'
+  // Standard Streamable HTTP clients negotiate the version in the JSON body.
+  // Some clients also send the obsolete routing header with a different
+  // revision; it must not make an otherwise valid MCP request fail.
 
   const headerMethod = requestHeaders.get('mcp-method')
   if (headerMethod && headerMethod !== body.method)
