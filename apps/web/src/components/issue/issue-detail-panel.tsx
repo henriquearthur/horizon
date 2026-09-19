@@ -73,7 +73,7 @@ import {
   projectPath,
 } from '~/lib/issue-presentation'
 import { useProjectMetadata } from '~/runtime/use-project-metadata'
-import { cn } from '~/lib/utils'
+import { cn, copyToClipboard } from '~/lib/utils'
 
 /**
  * Labels Horizon writes itself — Status, Prioridade, Projeto, Bloqueio — plus
@@ -756,12 +756,7 @@ function IssueCode({ code }: { code: string }) {
       type="button"
       aria-label={`Copiar ${code}`}
       title="Copiar código do issue"
-      onClick={() => {
-        void navigator.clipboard?.writeText(code).then(
-          () => setCopied(true),
-          () => setCopied(false),
-        )
-      }}
+      onClick={() => void copyToClipboard(code).then(setCopied)}
       className="group -ml-1 flex items-center gap-1 rounded px-1 py-0.5 font-semibold text-primary transition-colors hover:bg-primary/10"
     >
       {code}
