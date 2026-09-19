@@ -89,6 +89,16 @@ function AppShell({ children }: { children: ReactNode }) {
   const [scopeOpen, setScopeOpen] = useState(false)
   const [initiativesOpen, setInitiativesOpen] = useState(false)
   const [favorites, setFavorites] = useState<string[]>([])
+  // The sidebar folds away for reading, and the choice survives a reload.
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  useEffect(() => {
+    setSidebarOpen(localStorage.getItem('horizon.sidebar.collapsed') !== 'true')
+  }, [])
+  const toggleSidebar = () =>
+    setSidebarOpen((open) => {
+      localStorage.setItem('horizon.sidebar.collapsed', String(open))
+      return !open
+    })
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('horizon.sidebar.favorites') ?? '[]')
@@ -141,38 +151,42 @@ function AppShell({ children }: { children: ReactNode }) {
       <AppHeader
         userName={runtime.snapshot?.connection.user.name ?? null}
         userAvatarUrl={runtime.snapshot?.connection.user.avatarUrl}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={toggleSidebar}
       />
       <div className="relative flex min-h-0 flex-1">
-        <AppSidebar
-          activeView={viewParam}
-          views={builtinSidebarItems.map((item) => ({
-            ...item,
-            ...(runtime.snapshot
-              ? {
-                  count: String(
-                    runtime.snapshot.issues.filter((issue) => isIssueVisible(issue)).length,
-                  ),
-                }
-              : {}),
-          }))}
-          savedViews={savedViews.map((savedView) => ({
-            viewParam: viewRefToParam(savedViewRef(savedView.id)),
-            label: savedView.name,
-            icon: '◆',
-          }))}
-          groups={scopeTree.groups}
-          standaloneProjects={scopeTree.standaloneProjects}
-          onConfigureScope={() => setScopeOpen(true)}
-          initiatives={initiatives.map((initiative) => ({
-            viewParam: viewRefToParam(initiativeViewRef(initiative.id)),
-            label: initiative.name,
-            icon: '◈',
-            count: String(issueInitiativeIds.filter((id) => id === initiative.id).length),
-          }))}
-          onManageInitiatives={() => setInitiativesOpen(true)}
-          favorites={favorites}
-          onToggleFavorite={toggleFavorite}
-        />
+        {sidebarOpen ? (
+          <AppSidebar
+            activeView={viewParam}
+            views={builtinSidebarItems.map((item) => ({
+              ...item,
+              ...(runtime.snapshot
+                ? {
+                    count: String(
+                      runtime.snapshot.issues.filter((issue) => isIssueVisible(issue)).length,
+                    ),
+                  }
+                : {}),
+            }))}
+            savedViews={savedViews.map((savedView) => ({
+              viewParam: viewRefToParam(savedViewRef(savedView.id)),
+              label: savedView.name,
+              icon: '◆',
+            }))}
+            groups={scopeTree.groups}
+            standaloneProjects={scopeTree.standaloneProjects}
+            onConfigureScope={() => setScopeOpen(true)}
+            initiatives={initiatives.map((initiative) => ({
+              viewParam: viewRefToParam(initiativeViewRef(initiative.id)),
+              label: initiative.name,
+              icon: '◈',
+              count: String(issueInitiativeIds.filter((id) => id === initiative.id).length),
+            }))}
+            onManageInitiatives={() => setInitiativesOpen(true)}
+            favorites={favorites}
+            onToggleFavorite={toggleFavorite}
+          />
+        ) : null}
         {children}
       </div>
       <ScopeDialog open={scopeOpen} onOpenChange={setScopeOpen} />
