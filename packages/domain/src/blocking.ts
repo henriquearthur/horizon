@@ -80,7 +80,15 @@ export const blockedBy = (
 export const withBlockingLink = (
   source: ProviderIssue,
   target: Pick<ProviderIssue, 'projectId' | 'iid'>,
-): readonly string[] => [...new Set([...source.labels, blockingLabel(source, target)])]
+): readonly string[] => {
+  // Rewrite the pre-ADR `horizon-blocks:` spelling while touching an Issue, so
+  // new writes converge on one vocabulary without dropping existing links.
+  const normalized = source.labels.map((label) => {
+    const match = /^horizon-blocks:(\d+):(\d+):(\d+):(\d+)$/.exec(label)
+    return match ? `${BLOCKING_LABEL_PREFIX}${match.slice(1).join(':')}` : label
+  })
+  return [...new Set([...normalized, blockingLabel(source, target)])]
+}
 
 /** Drops one link from the labels of the Issue that carries it. */
 export const withoutBlockingLink = (reference: BlockingReference): readonly string[] =>

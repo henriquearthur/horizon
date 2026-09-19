@@ -59,7 +59,7 @@ describe('MCP contract with fake provider', () => {
     expect(((await callReadTool(ctx, 'read_scope')) as any).projects).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_groups')).toHaveLength(1)
     expect(await callReadTool(ctx, 'list_projects')).toHaveLength(1)
-    expect(await callReadTool(ctx, 'list_issues')).toHaveLength(1)
+    expect(((await callReadTool(ctx, 'list_issues')) as any).items).toHaveLength(1)
     expect(
       ((await callReadTool(ctx, 'get_metadata', { reference: 'team/alpha#3' })) as any).labels,
     ).toHaveLength(1)
@@ -125,5 +125,22 @@ describe('MCP contract with fake provider', () => {
       },
     })
     expect(provider.updateIssueProperties).toHaveBeenCalledOnce()
+  })
+
+  it('rejects labels that are not in project metadata unless explicitly opted in', async () => {
+    const provider = fakeProvider()
+    const ctx = { provider, scope }
+    await expect(
+      callWriteTool(ctx, 'create_issue', { projectId: 1, title: 'x', labels: ['type:chore'] }),
+    ).rejects.toMatchObject({ code: 'validation_error' })
+    await callWriteTool(ctx, 'create_issue', {
+      projectId: 1,
+      title: 'x',
+      labels: ['type:chore'],
+      createMissingLabels: true,
+    })
+    expect(provider.createIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ labels: ['type:chore'] }),
+    )
   })
 })

@@ -13,6 +13,14 @@ export type IssuePriority = (typeof PRIORITY_VALUES)[number]
 export type PropertyField = 'status' | 'priority'
 export const horizonLabel = (field: PropertyField, value: string) => `horizon::${field}::${value}`
 
+const LEGACY_STATUS_VALUES: Readonly<Record<string, IssueStatus>> = {
+  backlog: 'Backlog',
+  'in-progress': 'Em andamento',
+  'em andamento': 'Em andamento',
+  pausada: 'Pausada',
+  concluído: 'Concluído',
+}
+
 /**
  * Every label Horizon owns: the scoped `horizon::…` properties and the
  * unscoped `horizon-…` links. None of them belong in the label UI.
@@ -32,8 +40,26 @@ const parse = (labels: readonly string[], field: PropertyField, values: readonly
   }
 }
 
+const readStatus = (labels: readonly string[]) => {
+  const canonical = parse(labels, 'status', STATUS_VALUES)
+  const legacy = labels
+    .filter((label) => label.startsWith('horizon::status::'))
+    .map(
+      (label) => LEGACY_STATUS_VALUES[label.slice('horizon::status::'.length).toLocaleLowerCase()],
+    )
+    .filter((value): value is IssueStatus => value !== undefined)
+  const values = [
+    ...new Set([...(canonical.value ? [canonical.value as IssueStatus] : []), ...legacy]),
+  ]
+  return {
+    value: values.length === 1 ? values[0] : undefined,
+    conflict: values.length > 1,
+    labels: values,
+  }
+}
+
 export const readIssueProperties = (issue: Pick<ProviderIssue, 'labels' | 'state'>) => {
-  const status = parse(issue.labels, 'status', STATUS_VALUES)
+  const status = readStatus(issue.labels)
   const priority = parse(issue.labels, 'priority', PRIORITY_VALUES)
   return {
     status:
