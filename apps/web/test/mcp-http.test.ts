@@ -74,7 +74,7 @@ describe('MCP 2026-07-28 stateless Streamable HTTP contract', () => {
 
     const call: any = await (await rpc('tools/call', { name: 'read_scope', arguments: {} })).json()
     expect(call.result.resultType).toBe('complete')
-    expect(call.result.structuredContent).toEqual({ groups: [], projects: [], issues: [] })
+    expect(call.result.structuredContent).toEqual({ groups: [], projects: [] })
   })
 
   it('rejects missing or mismatched routing metadata', async () => {

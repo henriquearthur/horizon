@@ -11,6 +11,8 @@ import {
   type ProviderIssue,
   type IssueStatus,
   type IssuePriority,
+  STATUS_VALUES,
+  PRIORITY_VALUES,
   withBlockingLink,
   readIssueProperties,
 } from '@horizon/domain'
@@ -45,17 +47,38 @@ export type WriteContext = ReadContext & {
 }
 
 const toolSpecs: readonly ToolSpec[] = [
-  ['read_scope', 'Read the configured scope', {}],
+  [
+    'read_scope',
+    'Read the configured scope tree. Issues are omitted by default; set includeIssues=true for a bounded issue list.',
+    { includeIssues: { type: 'boolean' }, limit: { type: 'number' }, cursor: { type: 'string' } },
+  ],
   ['list_groups', 'List groups in the configured scope', {}],
   ['list_projects', 'List projects in the configured scope', {}],
-  ['list_issues', 'List issues in the configured scope', {}],
+  [
+    'list_issues',
+    'List issues with optional projectId, state, labels, assigneeId and search filters. Results are summaries by default; use verbose=true for descriptions. Pagination uses the returned cursor.',
+    {
+      projectId: { type: 'number' },
+      state: { type: 'string', enum: ['opened', 'closed'] },
+      labels: { type: 'array' },
+      assigneeId: { type: 'number' },
+      search: { type: 'string' },
+      limit: { type: 'number' },
+      cursor: { type: 'string' },
+      verbose: { type: 'boolean' },
+    },
+  ],
   [
     'get_issue',
     'Read one issue by technical or friendly reference',
     { reference: { type: 'string' } },
   ],
   ['get_comments', 'Read comments for an issue', { reference: { type: 'string' } }],
-  ['get_metadata', 'Read users and labels for an issue project', { reference: { type: 'string' } }],
+  [
+    'get_metadata',
+    'Read users and labels for a project. Provide projectId for project metadata, or reference for backwards compatibility.',
+    { projectId: { type: 'number' }, reference: { type: 'string' } },
+  ],
   ['get_hierarchy', 'Read sub-issues and blocking links', {}],
   ['list_views', 'List available views', {}],
   [
@@ -67,6 +90,7 @@ const toolSpecs: readonly ToolSpec[] = [
       description: { type: 'string' },
       labels: { type: 'array' },
       assigneeIds: { type: 'array' },
+      createMissingLabels: { type: 'boolean' },
     },
   ],
   ['update_issue', 'Update an issue', { reference: { type: 'string' } }],
@@ -76,15 +100,26 @@ const toolSpecs: readonly ToolSpec[] = [
     {
       reference: { type: 'string' },
       body: { type: 'string' },
-      model: { type: 'string' },
-      harness: { type: 'string' },
-      session_id: { type: 'string' },
+      model: {
+        type: 'string',
+        description: 'Provider model identifier, for example gpt-6 or claude-opus-5.',
+      },
+      harness: {
+        type: 'string',
+        description: 'Client/harness identifier, for example codex or claude-code.',
+      },
+      session_id: { type: 'string', description: 'Opaque identifier for the agent session.' },
     },
   ],
   [
     'set_issue_properties',
     'Set status, priority, labels and assignees',
-    { reference: { type: 'string' } },
+    {
+      reference: { type: 'string' },
+      labels: { type: 'array' },
+      assigneeIds: { type: 'array' },
+      createMissingLabels: { type: 'boolean' },
+    },
   ],
   [
     'create_sub_issue',
@@ -101,9 +136,15 @@ const toolSpecs: readonly ToolSpec[] = [
     'Start implementation of an issue',
     {
       reference: { type: 'string' },
-      model: { type: 'string' },
-      harness: { type: 'string' },
-      session_id: { type: 'string' },
+      model: {
+        type: 'string',
+        description: 'Provider model identifier, for example gpt-6 or claude-opus-5.',
+      },
+      harness: {
+        type: 'string',
+        description: 'Client/harness identifier, for example codex or claude-code.',
+      },
+      session_id: { type: 'string', description: 'Opaque identifier for the agent session.' },
       assigneeIds: { type: 'array' },
     },
   ],
@@ -113,9 +154,15 @@ const toolSpecs: readonly ToolSpec[] = [
     {
       reference: { type: 'string' },
       handoff_text: { type: 'string' },
-      model: { type: 'string' },
-      harness: { type: 'string' },
-      session_id: { type: 'string' },
+      model: {
+        type: 'string',
+        description: 'Provider model identifier, for example gpt-6 or claude-opus-5.',
+      },
+      harness: {
+        type: 'string',
+        description: 'Client/harness identifier, for example codex or claude-code.',
+      },
+      session_id: { type: 'string', description: 'Opaque identifier for the agent session.' },
       assigneeIds: { type: 'array' },
     },
   ],
@@ -124,9 +171,15 @@ const toolSpecs: readonly ToolSpec[] = [
     'Resume implementation of an issue',
     {
       reference: { type: 'string' },
-      model: { type: 'string' },
-      harness: { type: 'string' },
-      session_id: { type: 'string' },
+      model: {
+        type: 'string',
+        description: 'Provider model identifier, for example gpt-6 or claude-opus-5.',
+      },
+      harness: {
+        type: 'string',
+        description: 'Client/harness identifier, for example codex or claude-code.',
+      },
+      session_id: { type: 'string', description: 'Opaque identifier for the agent session.' },
       assigneeIds: { type: 'array' },
     },
   ],
@@ -151,21 +204,23 @@ const tools: McpTool[] = toolSpecs.map(([name, description, properties]) => ({
     properties,
     ...(Object.keys(properties).length
       ? {
-          required: Object.keys(properties).filter((k) =>
-            [
-              'reference',
-              'title',
-              'projectId',
-              'body',
-              'parent',
-              'source',
-              'target',
-              'model',
-              'harness',
-              'session_id',
-              'handoff_text',
-              'report',
-            ].includes(k),
+          required: Object.keys(properties).filter(
+            (k) =>
+              [
+                'reference',
+                'title',
+                'projectId',
+                'body',
+                'parent',
+                'source',
+                'target',
+                'model',
+                'harness',
+                'session_id',
+                'handoff_text',
+                'report',
+              ].includes(k) &&
+              !(name === 'get_metadata' && (k === 'projectId' || k === 'reference')),
           ),
         }
       : {}),
@@ -186,6 +241,24 @@ const readNames = new Set([
 export const readTools = (): readonly McpTool[] => tools.filter((t) => readNames.has(t.name))
 export const allTools = (): readonly McpTool[] => tools
 const readScope = async (ctx: ReadContext) => ctx.provider.readScope(ctx.scope)
+const pageResult = <T>(items: readonly T[], args: Record<string, unknown>) => {
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.isInteger(args.limit) ? (args.limit as number) : 50),
+  )
+  const offset =
+    typeof args.cursor === 'string' && /^\d+$/.test(args.cursor) ? Number(args.cursor) : 0
+  const page = items.slice(offset, offset + limit)
+  return {
+    items: page,
+    ...(offset + page.length < items.length ? { nextCursor: String(offset + page.length) } : {}),
+  }
+}
+const issueSummary = (value: ProviderIssue, verbose: boolean) => {
+  if (verbose) return value
+  const { description: _description, ...summary } = value
+  return summary
+}
 const issue = async (ctx: ReadContext, reference: unknown) => {
   if (typeof reference !== 'string' || !reference.trim())
     throw new McpToolError('validation_error', 'reference is required')
@@ -210,8 +283,21 @@ export async function callReadTool(
 ): Promise<unknown> {
   try {
     switch (name) {
-      case 'read_scope':
-        return readScope(ctx)
+      case 'read_scope': {
+        const d = await readScope(ctx)
+        const result: Record<string, unknown> = {
+          groups: selectedGroups(d.groups, ctx.scope),
+          projects: selectedProjects(d.projects, ctx.scope),
+        }
+        if (args.includeIssues === true) {
+          const ids = new Set((result.projects as readonly { id: number }[]).map((p) => p.id))
+          const issues = d.issues
+            .filter((item) => ids.has(item.projectId))
+            .map((item) => issueSummary(item, args.verbose === true))
+          result.issues = pageResult(issues, args)
+        }
+        return result
+      }
       case 'list_groups': {
         const d = await readScope(ctx)
         return selectedGroups(d.groups, ctx.scope)
@@ -223,9 +309,33 @@ export async function callReadTool(
       case 'list_issues': {
         const d = await readScope(ctx)
         const ids = new Set(selectedProjects(d.projects, ctx.scope).map((p) => p.id))
-        return d.issues
+        if (
+          args.projectId !== undefined &&
+          (!Number.isInteger(args.projectId) || !ids.has(args.projectId as number))
+        )
+          throw new McpToolError('scope_error', 'Project outside configured scope')
+        const wantedLabels = Array.isArray(args.labels)
+          ? args.labels.filter((x): x is string => typeof x === 'string')
+          : []
+        const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase() : undefined
+        const filtered = d.issues
           .filter((i) => ids.has(i.projectId))
-          .map((i) => ({ ...i, technicalReference: `${i.projectId}#${i.iid}` }))
+          .filter((i) => args.projectId === undefined || i.projectId === args.projectId)
+          .filter((i) => args.state === undefined || i.state === args.state)
+          .filter((i) => wantedLabels.every((label) => i.labels.includes(label)))
+          .filter(
+            (i) =>
+              args.assigneeId === undefined || i.assignees.some((a) => a.id === args.assigneeId),
+          )
+          .filter(
+            (i) =>
+              !search || `${i.title} ${i.description ?? ''}`.toLocaleLowerCase().includes(search),
+          )
+          .map((i) => ({
+            ...issueSummary(i, args.verbose === true),
+            technicalReference: `${i.projectId}#${i.iid}`,
+          }))
+        return pageResult(filtered, args)
       }
       case 'get_issue':
         return issue(ctx, args.reference)
@@ -239,12 +349,19 @@ export async function callReadTool(
         return { issue: i, comments: await provider.listComments(i.projectId, i.iid) }
       }
       case 'get_metadata': {
-        const i = await issue(ctx, args.reference)
+        let projectId: number
+        if (Number.isInteger(args.projectId)) projectId = args.projectId as number
+        else if (typeof args.reference === 'string' && args.reference.trim())
+          projectId = (await issue(ctx, args.reference)).projectId
+        else throw new McpToolError('validation_error', 'projectId or reference is required')
+        const d = await readScope(ctx)
+        if (!selectedProjects(d.projects, ctx.scope).some((p) => p.id === projectId))
+          throw new McpToolError('scope_error', 'Project outside configured scope')
         const [users, labels] = await Promise.all([
-          readAllPagesFast((p) => ctx.provider.listUsers(i.projectId, p)),
-          readAllPagesFast((p) => ctx.provider.listLabels(i.projectId, p)),
+          readAllPagesFast((p) => ctx.provider.listUsers(projectId, p)),
+          readAllPagesFast((p) => ctx.provider.listLabels(projectId, p)),
         ])
-        return { users, labels }
+        return { projectId, users, labels }
       }
       case 'get_hierarchy': {
         const d = await readScope(ctx)
@@ -281,6 +398,43 @@ const writeProvider = <K extends keyof ProviderWriteContract>(
     throw new McpToolError('provider_error', `Provider não implementa ${String(method)}`)
   return fn.bind(ctx.provider) as ProviderWriteContract[K]
 }
+const validateLabels = async (
+  ctx: WriteContext,
+  projectId: number,
+  labels: readonly unknown[],
+  allowMissing: boolean,
+) => {
+  if (!labels.every((label) => typeof label === 'string'))
+    throw new McpToolError('validation_error', 'labels must contain only strings')
+  const values = labels as readonly string[]
+  const reserved = [
+    ...STATUS_VALUES.map((value) => `horizon::status::${value}`),
+    ...PRIORITY_VALUES.map((value) => `horizon::priority::${value}`),
+  ]
+  const invalidReserved = values.filter(
+    (label) =>
+      (label.startsWith('horizon::status::') || label.startsWith('horizon::priority::')) &&
+      !reserved.includes(label),
+  )
+  if (invalidReserved.length)
+    throw new McpToolError('validation_error', 'Unknown Horizon property labels', {
+      invalid: invalidReserved,
+      valid: reserved,
+    })
+  if (allowMissing) return values
+  const known = await readAllPagesFast((p) => ctx.provider.listLabels(projectId, p))
+  const missing = values.filter((label) => !known.some((candidate) => candidate.name === label))
+  if (missing.length)
+    throw new McpToolError(
+      'validation_error',
+      'Unknown labels. Use createMissingLabels=true to create them explicitly.',
+      {
+        missing,
+        validLabels: known.map((label) => label.name),
+      },
+    )
+  return values
+}
 const resolved = async (ctx: WriteContext, ref: unknown) => issue(ctx, ref)
 export async function callWriteTool(
   ctx: WriteContext,
@@ -301,6 +455,9 @@ export async function callWriteTool(
       const projectId = args.projectId as number
       if (!d.projects.some((p) => p.id === projectId))
         throw new McpToolError('scope_error', 'Project outside configured scope')
+      const labels = Array.isArray(args.labels)
+        ? await validateLabels(ctx, projectId, args.labels, args.createMissingLabels === true)
+        : undefined
       return await writeProvider(
         ctx,
         'createIssue',
@@ -308,7 +465,7 @@ export async function callWriteTool(
         projectId,
         title: args.title,
         ...(typeof args.description === 'string' ? { description: args.description } : {}),
-        ...(Array.isArray(args.labels) ? { labels: args.labels } : {}),
+        ...(labels ? { labels } : {}),
         ...(Array.isArray(args.assigneeIds) ? { assigneeIds: args.assigneeIds } : {}),
       })
     }
@@ -326,12 +483,34 @@ export async function callWriteTool(
     if (name === 'set_issue_properties') {
       const i = await resolved(ctx, requireString('reference'))
       const changes: { status?: IssueStatus; priority?: IssuePriority } = {}
-      if (typeof args.status === 'string') changes.status = args.status as IssueStatus
-      if (typeof args.priority === 'string') changes.priority = args.priority as IssuePriority
+      if (args.status !== undefined) {
+        if (typeof args.status !== 'string' || !STATUS_VALUES.includes(args.status as IssueStatus))
+          throw new McpToolError(
+            'validation_error',
+            'status must be one of the canonical Horizon statuses',
+            { valid: STATUS_VALUES },
+          )
+        changes.status = args.status as IssueStatus
+      }
+      if (args.priority !== undefined) {
+        if (
+          typeof args.priority !== 'string' ||
+          !PRIORITY_VALUES.includes(args.priority as IssuePriority)
+        )
+          throw new McpToolError(
+            'validation_error',
+            'priority must be one of the canonical Horizon priorities',
+            { valid: PRIORITY_VALUES },
+          )
+        changes.priority = args.priority as IssuePriority
+      }
       let updated = await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, changes)
-      if (Array.isArray(args.labels) || Array.isArray(args.assigneeIds)) {
+      const labels = Array.isArray(args.labels)
+        ? await validateLabels(ctx, i.projectId, args.labels, args.createMissingLabels === true)
+        : undefined
+      if (labels || Array.isArray(args.assigneeIds)) {
         updated = await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, {
-          ...(Array.isArray(args.labels) ? { labels: args.labels as string[] } : {}),
+          ...(labels ? { labels } : {}),
           ...(Array.isArray(args.assigneeIds) ? { assigneeIds: args.assigneeIds as number[] } : {}),
         })
       }
@@ -398,22 +577,25 @@ export async function callWriteTool(
       const effects: {
         status: 'applied' | 'failed' | 'unknown'
         comment: 'applied' | 'failed' | 'unknown'
-        assignment: 'applied' | 'failed' | 'unknown'
-      } = { status: 'unknown', comment: 'unknown', assignment: assigneeIds ? 'unknown' : 'applied' }
+        assignment: 'applied' | 'skipped' | 'failed' | 'unknown'
+      } = { status: 'unknown', comment: 'unknown', assignment: assigneeIds ? 'unknown' : 'skipped' }
       const statusLabels: Record<typeof target, IssueStatus> = {
         in_progress: 'Em andamento',
         paused: 'Pausada',
         completed: 'Concluído',
       }
+      let updatedIssue: ProviderIssue = i
       try {
         if (currentKey !== target) {
-          await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, {
+          updatedIssue = await writeProvider(ctx, 'updateIssueProperties')(i.projectId, i.iid, {
             status: statusLabels[target],
           })
           effects.status = 'applied'
           if (assigneeIds) {
             try {
-              await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
+              updatedIssue = await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, {
+                assigneeIds,
+              })
               effects.assignment = 'applied'
             } catch (e) {
               effects.assignment = 'failed'
@@ -424,7 +606,9 @@ export async function callWriteTool(
             }
           }
         } else if (assigneeIds) {
-          await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, { assigneeIds })
+          updatedIssue = await writeProvider(ctx, 'updateIssue')(i.projectId, i.iid, {
+            assigneeIds,
+          })
           effects.assignment = 'applied'
         }
       } catch (e) {
@@ -446,7 +630,14 @@ export async function callWriteTool(
           error: e instanceof Error ? e.message : e,
         })
       }
-      return { issue: i, status: target, effects, citation }
+      if (typeof ctx.provider.readIssue === 'function') {
+        try {
+          updatedIssue = await writeProvider(ctx, 'readIssue')(i.projectId, i.iid)
+        } catch {
+          // The transition already succeeded; the mutation response is the best available snapshot.
+        }
+      }
+      return { issue: updatedIssue, status: target, effects, citation }
     }
     throw new McpToolError('not_found', `Unknown tool: ${name}`)
   } catch (e) {
