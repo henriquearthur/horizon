@@ -185,20 +185,21 @@ const validateRequestHeaders = (requestHeaders: Headers, body: Rpc): string | un
   const meta = body.params?._meta as RequestMeta | undefined
   const bodyVersion = standardProtocolVersion(body)
   const headerVersion = requestHeaders.get('mcp-protocol-version')
-  // Standard Streamable HTTP clients (including Codex) carry this metadata in
-  // the JSON body. The custom routing headers are accepted for legacy clients,
-  // but are optional for standard clients.
-  if (headerVersion && headerVersion !== bodyVersion)
+  const legacyRequest = isRecord(body.params?._meta)
+  if (
+    legacyRequest &&
+    (!headerVersion || headerVersion !== bodyVersion)
+  )
     return 'MCP-Protocol-Version header is missing or does not match request metadata'
 
   const headerMethod = requestHeaders.get('mcp-method')
-  if (headerMethod && headerMethod !== body.method)
+  if ((legacyRequest && !headerMethod) || (headerMethod && headerMethod !== body.method))
     return 'Mcp-Method header is missing or does not match the request method'
 
   if (body.method === 'tools/call') {
     const name = body.params?.name
     const headerName = decodeHeader(requestHeaders.get('mcp-name'))
-    if (typeof name !== 'string' || (headerName && headerName !== name))
+    if (typeof name !== 'string' || (legacyRequest && !headerName) || (headerName && headerName !== name))
       return 'Mcp-Name header is missing, malformed, or does not match the tool name'
   }
 }

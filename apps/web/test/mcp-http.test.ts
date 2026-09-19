@@ -78,8 +78,8 @@ describe('MCP 2026-07-28 stateless Streamable HTTP contract', () => {
   })
 
   it('rejects missing or mismatched routing metadata', async () => {
-    const standardClient: any = await (await rpc('tools/list', {}, { 'mcp-method': '' })).json()
-    expect(standardClient.result.tools.length).toBeGreaterThan(5)
+    const missingMethod: any = await (await rpc('tools/list', {}, { 'mcp-method': '' })).json()
+    expect(missingMethod.error.code).toBe(-32020)
 
     const wrongName: any = await (
       await rpc('tools/call', { name: 'list_views' }, { 'mcp-name': 'read_scope' })
