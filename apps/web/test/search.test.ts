@@ -18,13 +18,13 @@ describe('validateShellSearch', () => {
         view: 'project:infra/app',
         mode: 'kanban',
         q: 'terraform',
-        issue: '7:19',
+        issue: 'DC-19',
       }),
     ).toEqual({
       view: 'project:infra/app',
       mode: 'kanban',
       q: 'terraform',
-      issue: '7:19',
+      issue: 'DC-19',
     })
   })
 
@@ -58,7 +58,7 @@ describe('resolveShellSearch', () => {
 describe('horizonIssueHref', () => {
   it('preserves the active reading context', () => {
     expect(
-      horizonIssueHref({ viewParam: 'group:infra', mode: 'kanban', query: 'timeout' }, 7, 193),
-    ).toBe('/?view=group%3Ainfra&mode=kanban&q=timeout&issue=7%3A193')
+      horizonIssueHref({ viewParam: 'group:infra', mode: 'kanban', query: 'timeout' }, 'DC-193'),
+    ).toBe('/?view=group%3Ainfra&mode=kanban&q=timeout&issue=DC-193')
   })
 })

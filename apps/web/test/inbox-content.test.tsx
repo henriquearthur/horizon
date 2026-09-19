@@ -250,6 +250,32 @@ describe('InboxContent', () => {
     expect(screen.queryByLabelText('Detalhes do issue')).not.toBeInTheDocument()
   })
 
+  it('shows the friendly code, copies it and offers the full page', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    const provider = { listComments: vi.fn().mockResolvedValue([]) } as never
+    render(
+      <InboxContent
+        snapshot={snapshot}
+        view={{ _tag: 'Builtin', id: 'general' }}
+        mode="list"
+        query=""
+        issueRef="AP-1"
+        provider={provider}
+        refresh={vi.fn()}
+        refreshing={false}
+      />,
+    )
+
+    const code = await screen.findByRole('button', { name: 'Copiar AP-1' })
+    await userEvent.click(code)
+    expect(writeText).toHaveBeenCalledWith('AP-1')
+    expect(screen.getByRole('link', { name: 'Abrir em tela cheia' })).toHaveAttribute(
+      'href',
+      '/issue/AP-1',
+    )
+  })
+
   it('hangs a sub-issue under its parent instead of listing it twice', async () => {
     const withChild = {
       ...snapshot,
@@ -342,7 +368,7 @@ describe('InboxContent', () => {
       name: 'Abrir a issue pai #1: Backlog issue',
     })
     await userEvent.click(parentReference)
-    expect(onIssueSelected).toHaveBeenCalledWith('1:1')
+    expect(onIssueSelected).toHaveBeenCalledWith('AP-1')
   })
 
   it('creates a blocking link from the Detail and writes it as a label', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import type {
   BlockingReference,
   Initiative,
@@ -16,14 +16,19 @@ import {
   initiativeIdsFromLabels,
   initiativeLabel,
   isHorizonLabel,
+  friendlyIssueId,
   readIssueProperties,
   withBlockingLink,
   withoutBlockingLink,
 } from '@horizon/domain'
 import {
+  Check,
   ChevronDown,
+  Copy,
   CornerLeftUp,
   ExternalLink,
+  Maximize2,
+  Minimize2,
   FolderGit2,
   FolderKanban,
   GitMerge,
@@ -96,6 +101,9 @@ export function IssueDetailPanel({
   allIssues = [],
   projects = [],
   initiatives = [],
+  variant = 'drawer',
+  expandHref,
+  onExpand,
 }: {
   issue: ProviderIssue
   comments: readonly ProviderComment[]
@@ -118,6 +126,12 @@ export function IssueDetailPanel({
   users?: readonly ProviderUser[]
   availableLabels?: readonly string[]
   issueHref: (iid: number) => string
+  /** `drawer` overlays the Inbox; `page` is the dedicated address of the Issue. */
+  variant?: 'drawer' | 'page'
+  /** Full-page address of this Issue, offered as the expand button of the drawer. */
+  expandHref?: string | undefined
+  /** Takes the expand button there without a reload, when a router is around. */
+  onExpand?: (() => void) | undefined
   /** Opens a `#123` reference from the text without reloading the page. */
   onIssueSelect?: ((iid: number) => void) | undefined
 }) {
@@ -134,6 +148,10 @@ export function IssueDetailPanel({
   const [mergeRequests, setMergeRequests] = useState<readonly ProviderMergeRequest[]>([])
   const [busy, setBusy] = useState(false)
   const properties = readIssueProperties(issue)
+  // The friendly code is what the user quotes elsewhere, so it is the visible
+  // identity of the Issue and the thing a click copies.
+  const project = projects.find((candidate) => candidate.id === issue.projectId)
+  const friendlyCode = project ? friendlyIssueId(project, issue.iid) : `#${issue.iid}`
   const shownLabels = visibleLabels(issue.labels)
   const types = issueTypes(issue.labels)
   const initiativeId = initiativeIdsFromLabels(issue.labels)[0]
@@ -229,31 +247,76 @@ export function IssueDetailPanel({
     )
   }
 
+  const page = variant === 'page'
+
   return (
     <>
-      <button
-        type="button"
-        aria-label="Fechar detalhes"
-        className="fixed inset-0 z-40 cursor-default bg-foreground/8 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
+      {page ? null : (
+        <button
+          type="button"
+          aria-label="Fechar detalhes"
+          className="fixed inset-0 z-40 cursor-default bg-foreground/8 backdrop-blur-[1px]"
+          onClick={onClose}
+        />
+      )}
       <aside
         aria-label="Detalhes do issue"
         aria-busy={busy}
-        className="animate-panel-in fixed inset-y-0 right-0 z-50 flex w-[clamp(360px,40vw,520px)] max-w-full flex-col rounded-l-2xl border-l bg-card shadow-panel"
+        className={cn(
+          'flex flex-col bg-card',
+          page
+            ? 'min-h-0 w-full max-w-4xl flex-1 border-x'
+            : 'animate-panel-in fixed inset-y-0 right-0 z-50 w-[clamp(360px,40vw,520px)] max-w-full rounded-l-2xl border-l shadow-panel',
+        )}
       >
         <header className="flex-none border-b px-5 pt-3.5 pb-4">
           <div className="mb-3 flex items-center gap-2 font-mono text-[10.5px] text-muted-foreground">
-            <span className="font-semibold text-primary">#{issue.iid}</span>
+            <IssueCode code={friendlyCode} />
             <span className="min-w-0 flex-1 truncate">{issuePath(issue.webUrl)}</span>
             <Button variant="ghost" size="icon-xs" asChild>
               <a href={issue.webUrl} target="_blank" rel="noreferrer" aria-label="Abrir no GitLab">
                 <ExternalLink />
               </a>
             </Button>
-            <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Fechar detalhes">
-              <X />
-            </Button>
+            {page ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={onClose}
+                aria-label="Voltar para a Inbox"
+              >
+                <Minimize2 />
+              </Button>
+            ) : (
+              <>
+                {expandHref ? (
+                  <Button variant="ghost" size="icon-xs" asChild>
+                    <a
+                      href={expandHref}
+                      aria-label="Abrir em tela cheia"
+                      {...(onExpand
+                        ? {
+                            onClick: (event: MouseEvent) => {
+                              event.preventDefault()
+                              onExpand()
+                            },
+                          }
+                        : {})}
+                    >
+                      <Maximize2 />
+                    </a>
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onClose}
+                  aria-label="Fechar detalhes"
+                >
+                  <X />
+                </Button>
+              </>
+            )}
           </div>
 
           {issue.parentIid !== undefined ? (
@@ -677,6 +740,40 @@ export function IssueDetailPanel({
         </form>
       </aside>
     </>
+  )
+}
+
+/** The friendly code of the Issue: reads as an identity, copies on click. */
+function IssueCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+  return (
+    <button
+      type="button"
+      aria-label={`Copiar ${code}`}
+      title="Copiar código do issue"
+      onClick={() => {
+        void navigator.clipboard?.writeText(code).then(
+          () => setCopied(true),
+          () => setCopied(false),
+        )
+      }}
+      className="group -ml-1 flex items-center gap-1 rounded px-1 py-0.5 font-semibold text-primary transition-colors hover:bg-primary/10"
+    >
+      {code}
+      {copied ? (
+        <Check aria-hidden className="size-3" />
+      ) : (
+        <Copy aria-hidden className="size-3 opacity-0 transition-opacity group-hover:opacity-70" />
+      )}
+      <span className="sr-only" role="status">
+        {copied ? 'Código copiado' : ''}
+      </span>
+    </button>
   )
 }
 

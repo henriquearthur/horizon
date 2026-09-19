@@ -7,6 +7,7 @@ import {
   type ViewMode,
   type ViewRef,
 } from '@horizon/domain'
+import { isIssueRef } from '~/lib/issue-ref'
 
 /** Canonical `view` param of the View Horizon opens on. */
 export const DEFAULT_VIEW_PARAM = viewRefToParam(defaultViewRef)
@@ -26,8 +27,7 @@ export const validateShellSearch = (search: Record<string, unknown>): ShellSearc
   const view = viewRefToParam(decodeViewRef(search.view))
   const mode = decodeViewMode(search.mode)
   const q = typeof search.q === 'string' ? search.q : ''
-  const issue =
-    typeof search.issue === 'string' && /^\d+:\d+$/.test(search.issue) ? search.issue : ''
+  const issue = typeof search.issue === 'string' && isIssueRef(search.issue) ? search.issue : ''
   return {
     ...(view === DEFAULT_VIEW_PARAM ? {} : { view }),
     ...(mode === defaultViewMode ? {} : { mode }),
@@ -60,13 +60,12 @@ export const resolveShellSearch = (search: ShellSearch): ResolvedShellSearch => 
 /** Opens an Issue inside Horizon without discarding the current reading context. */
 export const horizonIssueHref = (
   current: Pick<ResolvedShellSearch, 'viewParam' | 'mode' | 'query'>,
-  projectId: number,
-  iid: number,
+  ref: string,
 ): string => {
   const params = new URLSearchParams()
   if (current.viewParam !== DEFAULT_VIEW_PARAM) params.set('view', current.viewParam)
   if (current.mode !== defaultViewMode) params.set('mode', current.mode)
   if (current.query) params.set('q', current.query)
-  params.set('issue', `${projectId}:${iid}`)
+  params.set('issue', ref)
   return `/?${params.toString()}`
 }
