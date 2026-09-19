@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   PRIORITY_VALUES,
   STATUS_VALUES,
@@ -16,7 +16,6 @@ import {
   type InboxGroup,
   type InboxSort,
   type IssueStatus,
-  type ProviderComment,
   type ProviderDiscussionMatch,
   type ProviderIssue,
   type ProviderWriteContract,
@@ -26,7 +25,8 @@ import {
 import { ArrowUpDown, Bookmark, Group, Plus, RefreshCw, X } from 'lucide-react'
 import { FilterMenu, type FilterDefinition } from './filter-menu'
 import { IssueViews, issueKey } from './issue-views'
-import { IssueCreateForm, IssueDetailPanel } from '~/components/issue/issue-detail-panel'
+import { IssueCreateForm } from '~/components/issue/issue-detail-panel'
+import { IssueDetailContainer } from '~/components/issue/issue-detail-container'
 import { LabelChip, PriorityBadge, StatusDot, UserAvatar } from '~/components/issue/issue-chrome'
 import { ContentToolbar } from '~/components/shell/content-toolbar'
 import { EmptyState } from '~/components/shell/empty-state'
@@ -53,6 +53,7 @@ import { persistSavedViews, readSavedViews, useSavedViews } from '~/db/use-saved
 import { useInitiatives } from '~/db/use-initiatives'
 import { byAge, projectPath } from '~/lib/issue-presentation'
 import { horizonIssueHref } from '~/lib/search'
+import { findIssueByRef, issuePageHref, issueRefParam } from '~/lib/issue-ref'
 import type { RuntimeSnapshot } from '~/server/runtime'
 import { searchRuntimeDiscussions } from '~/server/runtime-functions'
 
@@ -82,6 +83,7 @@ export function InboxContent({
   refreshing,
   onSavedViewSelected,
   onIssueSelected,
+  onIssueExpanded,
 }: {
   readonly snapshot: RuntimeSnapshot
   readonly view: ViewRef
@@ -97,11 +99,12 @@ export function InboxContent({
     query?: string
   }) => void
   readonly onIssueSelected?: (issueRef: string | undefined) => void
+  /** Leaves the drawer for the dedicated page of the Issue. */
+  readonly onIssueExpanded?: (issueRef: string) => void
 }) {
   const [filters, setFilters] = useState<InboxFilters>({})
   const [sort, setSort] = useState<InboxSort>('updated')
   const [group, setGroup] = useState<InboxGroup>('project')
-  const [comments, setComments] = useState<readonly ProviderComment[]>([])
   /**
    * The open Issue lives in the URL. This holds the choice just made, until the
    * router catches up — without it, closing the Detail would be undone by the
@@ -109,13 +112,6 @@ export function InboxContent({
    */
   const [pendingRef, setPendingRef] = useState<{ readonly value: string | undefined }>()
   const [detailError, setDetailError] = useState<string>()
-  const [detailLoading, setDetailLoading] = useState(false)
-  const detailRequest = useRef(0)
-  const scopeIdentity = JSON.stringify(snapshot.scope)
-  const discussionCache = useMemo(
-    () => new Map<string, readonly ProviderComment[]>(),
-    [provider, scopeIdentity],
-  )
   const [creating, setCreating] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<number>()
   const [saveName, setSaveName] = useState('')
@@ -252,40 +248,14 @@ export function InboxContent({
   const openRef = pendingRef ? pendingRef.value : issueRef
 
   /** The open Issue is whatever the URL points at, so closing it is just a navigation. */
-  const selected = useMemo(() => {
-    if (!openRef) return undefined
-    const [projectId = NaN, iid = NaN] = openRef.split(':').map(Number)
-    return snapshot.issues.find((issue) => issue.projectId === projectId && issue.iid === iid)
-  }, [openRef, snapshot.issues])
-  const selectedChildren = useMemo(
-    () =>
-      selected
-        ? snapshot.issues
-            .filter(
-              (issue) => issue.projectId === selected.projectId && issue.parentIid === selected.iid,
-            )
-            .sort(byAge)
-        : [],
-    [selected, snapshot.issues],
-  )
-  const selectedParent = useMemo(
-    () =>
-      selected?.parentIid === undefined
-        ? undefined
-        : snapshot.issues.find(
-            (issue) => issue.projectId === selected.projectId && issue.iid === selected.parentIid,
-          ),
-    [selected, snapshot.issues],
+  const selected = useMemo(
+    () => findIssueByRef(openRef, snapshot.issues, snapshot.projects),
+    [openRef, snapshot.issues, snapshot.projects],
   )
   const issueHref = (iid: number) =>
     horizonIssueHref(
-      {
-        viewParam: viewRefToParam(view),
-        mode,
-        query,
-      },
-      selected?.projectId ?? 0,
-      iid,
+      { viewParam: viewRefToParam(view), mode, query },
+      issueRefParam({ projectId: selected?.projectId ?? 0, iid }, snapshot.projects),
     )
 
   /** Counts come from the Issues the View offers, so a filter never reads `0` by surprise. */
@@ -437,54 +407,13 @@ export function InboxContent({
     },
     [onIssueSelected],
   )
-  const openIssue = useCallback((issue: ProviderIssue) => showIssue(issueKey(issue)), [showIssue])
+  const openIssue = useCallback(
+    (issue: ProviderIssue) => showIssue(issueRefParam(issue, snapshot.projects)),
+    [showIssue, snapshot.projects],
+  )
 
   // Once the URL carries the choice, the URL is in charge again.
   useEffect(() => setPendingRef(undefined), [issueRef])
-
-  // The discussion follows the Issue in the URL: opening, switching and closing
-  // are all the same navigation.
-  useEffect(() => {
-    setComments(openRef ? (discussionCache.get(openRef) ?? []) : [])
-    setDetailError(undefined)
-    if (!openRef) {
-      setDetailLoading(false)
-      return
-    }
-    const [projectId = NaN, iid = NaN] = openRef.split(':').map(Number)
-    if (!Number.isInteger(projectId) || !Number.isInteger(iid)) return
-    const cachedIds = new Set((discussionCache.get(openRef) ?? []).map((comment) => comment.id))
-    const requestId = ++detailRequest.current
-    setDetailLoading(true)
-    let active = true
-    void provider
-      .listComments(projectId, iid)
-      .then((loaded) => {
-        discussionCache.delete(openRef)
-        discussionCache.set(openRef, loaded)
-        if (discussionCache.size > 50) discussionCache.delete(discussionCache.keys().next().value!)
-        if (active)
-          setComments((current) => [
-            ...new Map(
-              [...loaded, ...current.filter((comment) => !cachedIds.has(comment.id))].map(
-                (comment) => [comment.id, comment],
-              ),
-            ).values(),
-          ])
-      })
-      .catch((cause: unknown) => {
-        if (active)
-          setDetailError(
-            cause instanceof Error ? cause.message : 'Não foi possível carregar a discussão.',
-          )
-      })
-      .finally(() => {
-        if (active && detailRequest.current === requestId) setDetailLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [openRef, provider, discussionCache])
 
   const changeStatus = useCallback(
     async (issue: ProviderIssue, status: IssueStatus) => {
@@ -730,29 +659,17 @@ export function InboxContent({
           </aside>
         ) : null}
         {selected ? (
-          <IssueDetailPanel
-            key={selected.id}
-            issue={selected}
-            comments={comments}
+          <IssueDetailContainer
+            snapshot={snapshot}
             provider={provider}
+            issue={selected}
             onClose={() => showIssue(undefined)}
-            subIssues={selectedChildren}
-            parent={selectedParent}
-            onOpenIssue={openIssue}
-            allIssues={snapshot.issues}
-            projects={snapshot.projects}
-            initiatives={initiatives}
-            onCommentCreated={(comment) => {
-              const next = [...comments, comment]
-              discussionCache.set(issueKey(selected), next)
-              setComments(next)
-            }}
-            users={snapshot.users}
-            currentUser={snapshot.connection.user}
-            loading={detailLoading}
-            availableLabels={labels}
+            onSelectRef={showIssue}
             issueHref={issueHref}
-            onIssueSelect={(iid) => showIssue(`${selected.projectId}:${iid}`)}
+            expandHref={issuePageHref(issueRefParam(selected, snapshot.projects))}
+            {...(onIssueExpanded
+              ? { onExpand: () => onIssueExpanded(issueRefParam(selected, snapshot.projects)) }
+              : {})}
           />
         ) : null}
         {detailError ? (

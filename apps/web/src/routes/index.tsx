@@ -108,6 +108,14 @@ function IssuesPage() {
               })
             }
             onIssueSelected={selectIssue}
+            onIssueExpanded={(ref) =>
+              // The Issue is the address now, so it leaves the search behind.
+              void navigate({
+                to: '/issue/$ref',
+                params: { ref },
+                search: ({ issue: _open, ...rest }) => rest,
+              })
+            }
           />
         </>
       )}

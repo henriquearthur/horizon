@@ -67,6 +67,22 @@ brings: `type:spec`, `type:ticket` and their siblings. Tipo is never drawn as a
 Label: it is a single coloured glyph leading the title — in the list, in the
 Kanban and in the Detail — with the word itself in the tooltip.
 
+## Código amigável
+
+The short name of an Issue, `DC-203`: the initials of the repository path plus
+the `iid`. It is what the user reads and quotes, so it heads the Detail — a
+click copies it — and it is also the Issue reference in the address:
+`/?issue=DC-203` for the Drawer over the Inbox and `/issue/DC-203` for the
+dedicated page. Two repositories may share initials; the reference then opens
+the Issue of the lowest project id, and `projectId:iid` still works as an
+unambiguous reference.
+
+## Detail
+
+The full reading of one Issue. It opens as a Drawer over the Inbox by default,
+and its expand button leads to the dedicated page of the Issue, where the same
+Detail takes the window. Both render the same component.
+
 ## Bloqueio
 
 A dependency between two Issues, `bloqueia` in one direction and `é bloqueada
