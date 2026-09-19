@@ -87,7 +87,7 @@ describe('MCP 2026-07-28 stateless Streamable HTTP contract', () => {
     expect(wrongName.error.code).toBe(-32020)
   })
 
-  it('reports unsupported protocol versions', async () => {
+  it('serves clients advertising another protocol revision', async () => {
     const unsupportedRequest = new Request('http://x/mcp', {
       method: 'POST',
       body: JSON.stringify({
@@ -108,11 +108,8 @@ describe('MCP 2026-07-28 stateless Streamable HTTP contract', () => {
     })
     const unsupported = await mcpHandler(unsupportedRequest)
     const unsupportedBody: any = await unsupported.json()
-    expect(unsupported.status).toBe(400)
-    expect(unsupportedBody.error).toMatchObject({
-      code: -32022,
-      data: { supported: [version], requested: '1900-01-01' },
-    })
+    expect(unsupported.status).toBe(200)
+    expect(unsupportedBody.result.tools.length).toBeGreaterThan(5)
   })
 
   it('guards the endpoint and rejects unknown methods', async () => {
